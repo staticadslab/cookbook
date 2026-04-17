@@ -1,0 +1,297 @@
+/**
+ * Recipe UI — shared by `index.html` and `component-library.html`.
+ * Edit here for colors, spacing, and component styling.
+ */
+
+:root {
+  font-family: system-ui, sans-serif;
+  line-height: 1.45;
+  color: #111;
+  background: #f6f6f4;
+}
+
+body {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+h1 {
+  font-size: 1.35rem;
+}
+
+section {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+textarea {
+  width: 100%;
+  min-height: 140px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+/** Optional: shorter textarea for docs / component demos (main CSV step keeps default height). */
+textarea.textarea--compact {
+  min-height: 80px;
+}
+
+button {
+  cursor: pointer;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #111;
+  color: #fff;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: #fff;
+  color: #111;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.persona-card {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.persona-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.muted {
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.error {
+  color: #a40000;
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.grid img {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+}
+
+.ad-caption {
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
+
+.env-banner {
+  background: #fff3cd;
+  border: 1px solid #856404;
+  color: #533f03;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+/* Only the banner title is block-level; inline <strong> in body text must stay inline. */
+.env-banner__title {
+  display: block;
+  margin: 0 0 0.35rem;
+  font-size: 1.05em;
+}
+
+.env-banner__title ~ .env-banner__title {
+  margin-top: 1.1rem;
+}
+
+.env-banner ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.env-banner__tips {
+  margin: 0.25rem 0 0;
+}
+
+.env-banner__tips li {
+  margin-bottom: 0.2rem;
+}
+
+.env-banner--ok {
+  background: #e8f5e9;
+  border-color: #2e7d32;
+  color: #1b5e20;
+}
+
+.env-banner--pending {
+  background: #f5f5f5;
+  border-color: #999;
+  color: #333;
+}
+
+.env-banner--error {
+  background: #ffebee;
+  border-color: #c62828;
+  color: #b71c1c;
+}
+
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.section-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.jobs-wrap {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.jobs-table th,
+.jobs-table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid #e8e8e8;
+  vertical-align: top;
+}
+
+.jobs-table th {
+  font-weight: 600;
+  color: #444;
+  background: #f3f3f3;
+}
+
+.jobs-table tr:last-child td {
+  border-bottom: none;
+}
+
+.job-id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.job-sub {
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: 0.2rem;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot--pending {
+  background: #9e9e9e;
+}
+
+.status-dot--processing {
+  background: #f57c00;
+}
+
+.status-dot--completed {
+  background: #2e7d32;
+}
+
+.status-dot--failed {
+  background: #c62828;
+}
+
+.status-meta {
+  font-size: 0.8rem;
+  color: #666;
+  font-weight: 400;
+  margin-top: 0.25rem;
+}
+
+.created-main {
+  font-weight: 500;
+}
+
+.created-abs {
+  font-size: 0.78rem;
+  color: #888;
+  margin-top: 0.2rem;
+}
+
+/* --- Component library page only (mock swatches) --- */
+
+.library-intro {
+  margin-bottom: 1.25rem;
+}
+
+.library-intro a {
+  color: #0d47a1;
+}
+
+.component-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #666;
+  margin: 0 0 0.5rem;
+}
+
+.component-swatch {
+  margin-bottom: 1.25rem;
+}
+
+.component-swatch:last-child {
+  margin-bottom: 0;
+}

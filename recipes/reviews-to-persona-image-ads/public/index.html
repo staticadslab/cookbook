@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reviews → Persona image ads (recipe)</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="envBanner" class="env-banner env-banner--pending" role="status">
+      Checking server environment…
+    </div>
+    <h1>Reviews → persona image ads</h1>
+    <p class="muted">
+      Proof-of-concept recipe: clean 4–5★ reviews, infer personas with Gemini, create Static Ads Lab
+      audiences + image ads. CSV and personas use <strong>sessionStorage</strong> (cleared on tab close).
+      <strong>Image-ad generation progress</strong> is stored in <strong>localStorage</strong> so you can
+      refresh and still see the job table; clear it from step 4 when you want a fresh run.
+    </p>
+
+    <section>
+      <h2>1. Paste or load CSV</h2>
+      <p class="muted">Export from your review app (needs <code>rating</code> and <code>review</code> columns).</p>
+      <label for="csvFile">Upload CSV</label>
+      <input id="csvFile" type="file" accept=".csv,text/csv" />
+      <label for="csvText" style="margin-top: 0.75rem">CSV contents</label>
+      <textarea id="csvText" placeholder="Paste CSV here…"></textarea>
+      <div class="row">
+        <button type="button" id="btnClean">Clean reviews</button>
+        <span id="cleanMeta" class="muted"></span>
+      </div>
+      <p id="cleanError" class="error" hidden></p>
+    </section>
+
+    <section id="sectionInferPersonas">
+      <h2>2. Infer personas</h2>
+      <p id="inferModelMeta" class="muted">
+        <span id="inferModelMetaInner">Loading model info…</span>
+      </p>
+      <div class="row">
+        <button type="button" id="btnPersonas" disabled>Infer personas (Gemini)</button>
+      </div>
+      <p id="personasError" class="error" hidden></p>
+    </section>
+
+    <section>
+      <h2>3. Select personas</h2>
+      <p id="selectHint" class="muted">Infer personas first.</p>
+      <div id="personaList"></div>
+      <div class="row">
+        <button type="button" id="btnGenerate" disabled>Generate image ads</button>
+        <span id="selectCount" class="muted">0 / 5 selected</span>
+      </div>
+      <p id="generateError" class="error" hidden></p>
+      <p id="generateStatus" class="muted"></p>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>4. Generation &amp; results</h2>
+        <button type="button" id="btnClearGeneration" class="secondary" hidden>
+          Clear saved generation
+        </button>
+      </div>
+      <p class="muted" id="jobsHint" hidden>
+        Progress updates use the server only (batched Static Ads Lab reads). Polling pauses while this tab
+        is hidden and refreshes when you return.
+      </p>
+      <div id="jobsWrap" class="jobs-wrap" hidden>
+        <table class="jobs-table" aria-label="Image ad generation jobs">
+          <thead>
+            <tr>
+              <th scope="col">Job</th>
+              <th scope="col">Status</th>
+              <th scope="col">Created</th>
+            </tr>
+          </thead>
+          <tbody id="jobsTableBody"></tbody>
+        </table>
+      </div>
+      <div id="results" class="grid"></div>
+    </section>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
