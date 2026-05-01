@@ -1,14 +1,18 @@
 /**
  * Thin Static Ads Lab HTTP client (api.staticadslab.com).
- * @see https://www.staticadslab.com/api/openapi
+ * API rules and behavior: https://www.staticadslab.com/llms.txt
  */
 
+import { createHash } from "node:crypto";
 import { recipeLog, recipeWarn } from "./debug-log.js";
 
-/** Production API host (matches OpenAPI `servers`); not configurable in this recipe. */
+/** Production host; matches Base URL in https://www.staticadslab.com/llms.txt (not configurable here). */
 const BASE_URL = "https://api.staticadslab.com";
 
-/** Defaults for `waitForJobComplete` / `waitForImageAdComplete` when options omit overrides. */
+/**
+ * Reference helpers for scripts or CLIs that block until a single job or image ad finishes.
+ * The Express recipe uses batched `GET /v1/image-ads?ids=...` instead; see llms.txt.
+ */
 const DEFAULT_JOB_POLL_MAX_ATTEMPTS = 160;
 const DEFAULT_JOB_POLL_INTERVAL_MS = 3000;
 const DEFAULT_IMAGE_AD_POLL_MAX_ATTEMPTS = 120;
@@ -54,7 +58,7 @@ type ImageAdListPayload = {
   meta: Record<string, unknown>;
 };
 
-/** @see https://www.staticadslab.com/api/openapi — JobStatus */
+/** Job row shape from `GET /v1/jobs/:id` — see llms.txt / async jobs. */
 export type SalJobStatus = {
   job_id: string;
   type: string;
@@ -77,6 +81,61 @@ export type CreateImageAdPayload = {
   prompt?: string;
   options?: { generate_ai_images?: boolean; generate_copy?: boolean };
 };
+
+/** Stable idempotency key from the exact JSON body sent on POST (llms.txt: Idempotency-Key). */
+function idempotencyKeyForJsonBody(jsonBody: string): string {
+  return createHash("sha256").update(jsonBody, "utf8").digest("hex");
+}
+
+function parseTopUpHint(errObj: Record<string, unknown>): string {
+  const candidates = [
+    errObj.top_up_url,
+    errObj.topUpUrl,
+    errObj.topup_url,
+    (errObj.details as Record<string, unknown> | undefined)?.top_up_url,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.length > 0) return c;
+  }
+  return "";
+}
+
+/** Build a concise message from SAL `{ error, meta }` (llms.txt response shape). */
+function formatSalHttpError(
+  status: number,
+  body: unknown,
+  fallbackText: string,
+): string {
+  if (typeof body !== "object" || body === null) {
+    return fallbackText.slice(0, 900);
+  }
+  const root = body as Record<string, unknown>;
+  const err = root.error;
+  const parts: string[] = [];
+
+  if (typeof err === "object" && err !== null) {
+    const e = err as Record<string, unknown>;
+    const code = typeof e.code === "string" ? e.code : "";
+    const message = typeof e.message === "string" ? e.message : "";
+    if (code) parts.push(`[${code}]`);
+    if (message) parts.push(message);
+    if (status === 402 || code === "INSUFFICIENT_BALANCE") {
+      const url = parseTopUpHint(e);
+      if (url) parts.push(`Top up: ${url}`);
+    }
+  }
+
+  const meta = root.meta;
+  if (typeof meta === "object" && meta !== null) {
+    const rid = (meta as Record<string, unknown>).request_id;
+    if (typeof rid === "string" && rid) parts.push(`request_id=${rid}`);
+  }
+
+  if (parts.length > 0) {
+    return parts.join(" ").slice(0, 900);
+  }
+  return fallbackText.slice(0, 900);
+}
 
 async function salJson<T>(
   apiKey: string,
@@ -103,10 +162,7 @@ async function salJson<T>(
   }
 
   if (!res.ok) {
-    const msg =
-      typeof body === "object" && body !== null && "message" in body
-        ? JSON.stringify(body)
-        : text;
+    const msg = formatSalHttpError(res.status, body, text);
     recipeWarn(
       "SAL request error",
       init.method ?? "GET",
@@ -115,7 +171,7 @@ async function salJson<T>(
       msg.slice(0, 200),
     );
     throw new Error(
-      `Static Ads Lab ${init.method ?? "GET"} ${path} → ${res.status}: ${msg.slice(0, 900)}`,
+      `Static Ads Lab ${init.method ?? "GET"} ${path} (${res.status}): ${msg}`,
     );
   }
 
@@ -132,9 +188,13 @@ export async function createAudience(
   apiKey: string,
   body: { product_id: string; name: string; description?: string },
 ): Promise<SalAudience> {
+  const jsonBody = JSON.stringify(body);
   const out = await salJson<ApiEnvelope<SalAudience>>(apiKey, "/v1/audiences", {
     method: "POST",
-    body: JSON.stringify(body),
+    body: jsonBody,
+    headers: {
+      "Idempotency-Key": idempotencyKeyForJsonBody(jsonBody),
+    },
   });
   return out.data;
 }
@@ -143,9 +203,13 @@ export async function createImageAd(
   apiKey: string,
   payload: CreateImageAdPayload,
 ): Promise<SalImageAd> {
+  const jsonBody = JSON.stringify(payload);
   const out = await salJson<ApiEnvelope<SalImageAd>>(apiKey, "/v1/image-ads", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: jsonBody,
+    headers: {
+      "Idempotency-Key": idempotencyKeyForJsonBody(jsonBody),
+    },
   });
   return out.data;
 }
@@ -203,8 +267,8 @@ export async function getJob(
 }
 
 /**
- * Poll `GET /v1/jobs/{id}` until the job finishes (production-style; avoids hammering image-ad GET).
- * Defaults are more generous than legacy image-ad polling because many jobs may run in parallel.
+ * Poll `GET /v1/jobs/{id}` until the job finishes.
+ * Not used by the Express app (which uses batched image-ad listing); handy for one-off scripts.
  */
 export async function waitForJobComplete(
   apiKey: string,
@@ -262,7 +326,7 @@ export async function waitForJobComplete(
 }
 
 /**
- * Poll until the ad leaves `processing` or attempts are exhausted.
+ * Poll `GET /v1/image-ads/:id` until terminal. Not used by the Express app.
  */
 export async function waitForImageAdComplete(
   apiKey: string,

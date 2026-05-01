@@ -4,7 +4,7 @@ Use this file as a starting instruction when extending the recipe.
 
 ## Goal
 
-This recipe shows: **reviews CSV → Gemini personas → Static Ads Lab audiences + image ads → PNG URLs**. Keep the orchestration in `src/main.ts` easy to skim; put logic in `src/lib/*` and the HTTP surface in `src/http/server.ts` / `src/workflow.ts`.
+This recipe shows: **reviews CSV to Gemini personas to Static Ads Lab audiences + image ads to PNG URLs**. Keep the orchestration in `src/main.ts` easy to skim; put logic in `src/lib/*` and the HTTP surface in `src/http/server.ts` / `src/workflow.ts`.
 
 **Generate flow:** the browser calls **`POST /api/generate/start`** (enqueue all image ads), persists returned **`imageAdId` / `jobId` rows in `localStorage`**, then **`POST /api/generate/status`** on a timer. The server performs **batched `GET /v1/image-ads?ids=…`** per status request — not N SAL calls from the client.
 

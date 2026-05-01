@@ -277,7 +277,7 @@ function renderResultsFromStatusRows(statusRows) {
         <div class="ad-caption">
           ${escapeHtml(row.personaShortLabel)} · ${escapeHtml(row.designTemplateId.slice(0, 12))}…
           <br />
-          <a href="${escapeHtml(ad.image_url)}" download>Download PNG</a>
+          <a href="${escapeHtml(ad.image_url)}" target="_blank" rel="noreferrer">Download PNG</a>
         </div>
       `;
     } else if (ad?.status === 'failed') {

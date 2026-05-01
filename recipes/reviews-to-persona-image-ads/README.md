@@ -1,20 +1,24 @@
-# Reviews → persona image ads
+# Reviews to persona image ads
 
 Turn a **reviews export** (4★ and 5★ rows) into **buyer personas** with Gemini, then batch-create **Static Ads Lab audiences** and **Meta-ready image ads** (one PNG per ad). This is a **developer starter**: small Express server, vanilla UI, no database.
+
+**API rules and behavior:** [https://www.staticadslab.com/llms.txt](https://www.staticadslab.com/llms.txt) (source of truth for this recipe).
 
 ---
 
 ## For AI coding agents (Claude Code, Cursor, etc.)
 
-**Intent:** Demonstrate a linear workflow: CSV → structured personas → SAL `audiences` + `image-ads`. Image ads are **POSTed in parallel** (SAL queues work). The **browser does not call SAL**; it persists **`imageAdId` / `jobId` rows in `localStorage`**, then polls **`POST /api/generate/status`**. Each status check triggers **one batched `GET /v1/image-ads?ids=…`** on the server (see [OpenAPI — list image ads](https://www.staticadslab.com/api/openapi)), so progress is **one aggregate read per tick**, not N requests per id. Fork by changing `src/config/recipe-constants.ts`, prompts in `prompts/`, or the grid logic in `src/lib/generate-image-ads.ts`.
+**Intent:** Linear workflow: CSV to structured personas to SAL `audiences` + `image-ads`. Image-ad creates use **bounded parallel POSTs** (up to **8** at a time per [llms.txt](https://www.staticadslab.com/llms.txt)); enlarge the persona × template grid only if you also cap or stagger traffic. The **browser does not call SAL**; it stores **`imageAdId` / `jobId`** in **`localStorage`**, then polls **`POST /api/generate/status`**. Each status check triggers **one batched `GET /v1/image-ads?ids=…`** on the server (batch-poll in llms.txt), so progress is **one aggregate SAL read per tick**, not N requests per id.
 
-**Entry / narrative:** Read `src/main.ts` (pseudocode comments) then `src/workflow.ts` and `src/http/server.ts`. The static UI is `public/index.html`, `public/app.js`, and `public/styles.css`.
+High-level map: `src/main.ts` to `src/workflow.ts`, `src/http/server.ts`. **Where to edit:** see [`prompt.md`](prompt.md) (keeps this README short).
 
-**Secrets:** Only on the server. Never expose `API_KEY_*` to `public/`.
+**Entry / narrative:** Read `src/main.ts` (pseudocode comments) then `src/workflow.ts` and `src/http/server.ts`. UI: `public/index.html`, `public/app.js`, `public/styles.css`.
 
-**State:** `sessionStorage` holds CSV + personas + checkbox selections. **`localStorage`** holds the current generation’s row ids so a refresh can reopen the **job table** and resume polling.
+**Secrets:** Server only — never expose `API_KEY_*` under `public/`.
 
-**UI polling:** ~**4s** while any row is still `processing`; when every row is **`completed`** or **`failed`**, one optional **~30s** follow-up request runs, then the timer **idles** (no steady polling while nothing is moving). Polling **pauses when the tab is hidden** and resumes when the tab is visible or the window gains **focus**.
+**State:** `sessionStorage`: CSV, personas, checkbox selections. **`localStorage`:** current generation row ids (refresh resumes the job table + polling).
+
+**UI polling:** ~**4s** while any row is non-terminal; when all are **`completed`** or **`failed`**, one optional **~30s** follow-up, then idle. **Pauses** when the tab is hidden; **resumes** on visibility or window **focus**.
 
 **Dependencies:** `ai` (v6), `@ai-sdk/google`, `zod`, `express`, `csv-parse`, `tsx`, `typescript`.
 
@@ -22,30 +26,30 @@ Turn a **reviews export** (4★ and 5★ rows) into **buyer personas** with Gemi
 
 ## Prerequisites
 
-- Node.js **20+** (for a modern `fetch` runtime; 22 is fine).
-- A **Google AI Studio** key for Gemini (`API_KEY_GOOGLE_GEMINI`).
-- A **Static Ads Lab** API key (`API_KEY_STATIC_ADS_LAB`).
-- **BYO** brand id, product id, optional product variant id, and **design template ids** that already exist in your workspace.
+- Node.js **20+** (modern `fetch`; 22 is fine).
+- **Google AI Studio** key: `API_KEY_GOOGLE_GEMINI`.
+- **Static Ads Lab** key: `API_KEY_STATIC_ADS_LAB` (`X-API-Key` header — see llms.txt).
+- **BYO** SAL ids: brand, product, optional variant, **completed** design template ids in your workspace.
 
 ## Environment variables
 
-Copy `.env.example` to `.env` and fill in (optional: add **`.env.local`** for machine-specific keys — it is loaded after `.env` and overrides the same keys):
+Copy `.env.example` to `.env` (optional **`.env.local`** after `.env` for overrides):
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `API_KEY_GOOGLE_GEMINI` | Yes | Gemini API key (server-side only). |
-| `API_KEY_STATIC_ADS_LAB` | Yes | Static Ads Lab API key (`X-API-Key` header). |
-| `GEMINI_MODEL` | No | Override model id (default: `gemini-3.1-flash-lite-preview`). |
-| `PORT` | No | HTTP port (default: `9000`; cookbook recipes use `9000+` so they stay off crowded ports like `3000`). |
+| `API_KEY_GOOGLE_GEMINI` | Yes | Gemini (server-side only). |
+| `API_KEY_STATIC_ADS_LAB` | Yes | Static Ads Lab (`X-API-Key`). |
+| `GEMINI_MODEL` | No | Default: `gemini-3.1-flash-lite-preview`. |
+| `PORT` | No | Default `9000`. |
 
-The Static Ads Lab base URL is fixed to **`https://api.staticadslab.com`** in `src/lib/staticadslab-client.ts` (not an env var in this recipe).
+SAL base URL is fixed in `src/lib/staticadslab-client.ts` to **`https://api.staticadslab.com`** (llms.txt Base URL).
 
 ## BYO data
 
-1. **CSV:** Review-app export with **`rating`** and **`review`** columns (Loox-style exports work). This recipe keeps **4 and 5** star rows only. Messy text may still need manual cleanup — see comments in `src/lib/parse-reviews.ts`.
-2. **Static Ads Lab ids:** Edit `src/config/recipe-constants.ts` and **fill in** your workspace values: `brandId`, `productId`, optional `productVariantId` (or leave empty to omit), and at least one id in `designTemplateIds`. The repo starts with empty ids so the UI banner lists what is missing; ids are **not** validated against the API until you run **Generate image ads**. Each string in `designTemplateIds` is one “creative” in the grid.
+1. **CSV:** Columns **`rating`** and **`review`** (Loox-style works). Keeps **4–5★** only. Parser notes: `src/lib/parse-reviews.ts`.
+2. **SAL ids:** `src/config/recipe-constants.ts` — `brandId`, `productId`, optional `productVariantId`, `designTemplateIds` (≥1). Shipped empty until you configure; **Generate image ads** validates against the API.
 
-Default grid size: **`PERSONA_SLOT_COUNT` personas × number of template ids** (see `recipe-constants.ts`). Adjust constants to change the split.
+Grid: **`PERSONA_SLOT_COUNT` × `designTemplateIds.length`** image ads (adjust in `recipe-constants.ts`).
 
 ## How to run
 
@@ -57,30 +61,40 @@ cp .env.example .env
 npm start
 ```
 
-Watch mode (restart server on TypeScript changes): `npm run dev`.
+Watch mode: `npm run dev`.
 
-Open **http://localhost:9000** (unless you set `PORT`) — paste or upload CSV, infer personas, select the required number of personas (`PERSONA_SLOT_COUNT`), generate ads.
+Open **http://localhost:9000** (or **`PORT`**) — CSV to infer personas to select **`PERSONA_SLOT_COUNT`** personas to generate.
 
-The UI calls **`GET /api/config/env-status`** on load. The response includes **`personaSlotCount`** (same as `PERSONA_SLOT_COUNT` in `recipe-constants.ts` for how many personas to select), **`geminiModelId`**, **`recipeConstantsIssues`** (strings describing missing or empty SAL id fields in `recipe-constants.ts`), **`recipeConstantsReady`**, and **`canGenerateAds`** (false until env keys and constants look ready). The **strip at the very top** shows **green** only when env and constants pass these POC checks; **yellow** lists what’s missing; **red** if the request failed. **Step 2** shows the Gemini model id.
+### `GET /api/config/env-status`
 
-**Debugging:** Server logs use the prefix `[reviews-to-persona-image-ads]`; the browser console uses `[reviews-to-persona-image-ads UI]`. No API key values are logged—only counts, ids, and timings.
+On load the UI fetches env/config status. Response includes:
+
+- **`personaSlotCount`** — must match `PERSONA_SLOT_COUNT` for checkbox rules
+- **`geminiModelId`** — shown in step 2
+- **`recipeConstantsIssues`** / **`recipeConstantsReady`** — POC checks on `recipe-constants.ts`
+- **`canGenerateAds`** — true when env + constants look ready
+
+**Banner:** green if checks pass; yellow lists gaps; red if the request failed.
+
+**Debugging:** Server logs `[reviews-to-persona-image-ads]`; browser `[reviews-to-persona-image-ads UI]`. Keys are never logged.
 
 ## Expected outputs
 
-- **UI:** A **job table** (job / image-ad id, status, created time) plus thumbnails and **per-ad PNG** download links when `image_url` is available.
-- **API:** JSON from `POST /api/reviews/clean`, `/api/personas`, **`/api/generate/start`** (enqueue), **`/api/generate/status`** (batched progress) — see `src/http/server.ts`.
+- **UI:** Job table + thumbnails and **PNG** download when `image_url` is set.
+- **API:** `POST /api/reviews/clean`, `/api/personas`, `/api/generate/start`, `/api/generate/status` — see `src/http/server.ts`.
 
 ## Troubleshooting
 
 | Symptom | Things to check |
 |--------|------------------|
-| `Missing required environment variable` | `.env` present and loaded from the recipe directory; variable names match exactly. |
-| `401` / SAL auth errors | `API_KEY_STATIC_ADS_LAB` and key header (`X-API-Key`) — see `src/lib/staticadslab-client.ts`. |
-| Gemini errors | Model id (`GEMINI_MODEL`), billing, and `API_KEY_GOOGLE_GEMINI`. |
-| `CSV must include "review" and "rating"` | Export headers; rename columns or adjust parser for your dialect (POC only supports this shape). |
-| Status table stuck on “Waiting” | Network path to `https://api.staticadslab.com`; image ad ids in `localStorage` still valid. Jobs overview: [Static Ads Lab docs — Jobs](https://www.staticadslab.com/docs#tag/jobs). |
-| Many duplicate audiences | Expected for a POC; production workflows might reuse audiences or delete stale ones. |
+| `Missing required environment variable` | `.env` in recipe directory; exact variable names. |
+| `401` / SAL auth | Key and `X-API-Key` header (llms.txt). |
+| `402` / insufficient balance | Wallet top-up — error payload / response may include a top-up URL (llms.txt). |
+| Gemini errors | `GEMINI_MODEL`, billing, `API_KEY_GOOGLE_GEMINI`. |
+| `CSV must include "review" and "rating"` | Headers / export dialect; PO supports this shape only. |
+| Status stuck on “Waiting” | Reachability of `api.staticadslab.com`; stale ids in `localStorage`. Async pattern: [Async jobs guide](https://www.staticadslab.com/docs/guides/async-jobs.mdx). |
+| Many duplicate audiences | Expected for this POC; production may reuse or clean up audiences. |
 
 ## Claude Code
 
-See [`prompt.md`](prompt.md) in this folder for a short handoff template.
+See [`prompt.md`](prompt.md) for a short handoff template.

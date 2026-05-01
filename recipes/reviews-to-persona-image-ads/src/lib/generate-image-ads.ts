@@ -37,9 +37,37 @@ function imageAdPromptFromPersona(persona: Persona): string {
   ].join('\n');
 }
 
+/** llms.txt recommends ~8 parallel POSTs as a safe default for image-ad creates. */
+const MAX_PARALLEL_IMAGE_AD_POSTS = 8;
+
+/**
+ * Run async tasks with at most `limit` in flight at once (order of completion may differ from input).
+ */
+async function mapWithLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = nextIndex++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+
+  const n = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return results;
+}
+
 /**
  * For each persona: create a SAL audience (sequential — small N).
- * POST every image-ad row in parallel. Returns ids immediately; the UI polls
+ * POST image-ad creates with bounded concurrency; returns ids immediately. The UI polls
  * `GET /v1/image-ads?ids=...` via the server until each row is terminal.
  */
 export async function enqueueImageAdsForPersonas(
@@ -76,13 +104,13 @@ export async function enqueueImageAdsForPersonas(
     withAudiences.push({ persona, audienceId: audience.id });
   }
 
-  type CreatedRow = {
+  type CreateSpec = {
     persona: Persona;
     designTemplateId: string;
-    created: SalImageAd;
+    payload: CreateImageAdPayload;
   };
 
-  const createTasks: Promise<CreatedRow>[] = [];
+  const createSpecs: CreateSpec[] = [];
   for (const { persona, audienceId } of withAudiences) {
     for (const designTemplateId of templateIds) {
       const payload: CreateImageAdPayload = {
@@ -95,18 +123,23 @@ export async function enqueueImageAdsForPersonas(
       if (RECIPE_IDS.productVariantId) {
         payload.product_variant_id = RECIPE_IDS.productVariantId;
       }
-
-      createTasks.push(
-        (async () => {
-          const created = await createImageAd(apiKey, payload);
-          return { persona, designTemplateId, created };
-        })(),
-      );
+      createSpecs.push({ persona, designTemplateId, payload });
     }
   }
 
-  recipeLog('SAL batch POST /v1/image-ads', { count: createTasks.length });
-  const createdRows = await Promise.all(createTasks);
+  recipeLog('SAL batch POST /v1/image-ads', {
+    count: createSpecs.length,
+    maxParallel: MAX_PARALLEL_IMAGE_AD_POSTS,
+  });
+
+  const createdRows = await mapWithLimit(
+    createSpecs,
+    MAX_PARALLEL_IMAGE_AD_POSTS,
+    async (spec) => {
+      const created = await createImageAd(apiKey, spec.payload);
+      return { persona: spec.persona, designTemplateId: spec.designTemplateId, created };
+    },
+  );
 
   return createdRows.map((row) => ({
     imageAdId: row.created.id,
