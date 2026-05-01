@@ -1,30 +1,27 @@
-# Claude Code prompt stub — `reviews-to-persona-image-ads`
+# Agent guide — reviews-to-persona-image-ads
 
-Use this file as a starting instruction when extending the recipe.
+## Audience and tone
 
-## Goal
+The user is a marketing-agency owner, not an engineer. Narrate in plain English. Don't paste endpoint paths, HTTP codes, or function names unless they ask. Explore the code silently; only surface your conclusions.
 
-This recipe shows: **reviews CSV to Gemini personas to Static Ads Lab audiences + image ads to PNG URLs**. Keep the orchestration in `src/main.ts` easy to skim; put logic in `src/lib/*` and the HTTP surface in `src/http/server.ts` / `src/workflow.ts`.
+## Read in this order
 
-**Generate flow:** the browser calls **`POST /api/generate/start`** (enqueue all image ads), persists returned **`imageAdId` / `jobId` rows in `localStorage`**, then **`POST /api/generate/status`** on a timer. The server performs **batched `GET /v1/image-ads?ids=…`** per status request — not N SAL calls from the client.
+1. <https://www.staticadslab.com/llms.txt> — Static Ads Lab API rules. Source of truth.
+2. [`src/main.ts`](./src/main.ts) — the pseudo-code header at the top is the algorithm.
+3. This file — for the file map below.
 
-## Likely edit points
+## Files most users want to edit
 
-- `src/config/recipe-constants.ts` — brand, product, variant, design template ids, and **`PERSONA_SLOT_COUNT`** (how many personas the user must select; also exposed as **`personaSlotCount`** on **`GET /api/config/env-status`** for `public/app.js`).
-- `prompts/infer-personas.md` — persona quality and evidence rules.
-- `src/lib/generate-image-ads.ts` — grid / prompt text; **enqueue only** (no blocking wait on the server).
-- `src/lib/staticadslab-client.ts` — SAL HTTP helpers; base URL is fixed to **`https://api.staticadslab.com`** in this recipe.
-- `src/workflow.ts` — `enqueueAdsForSelectedPersonas`, `getGenerationStatus` (batched list by ids).
-- `public/app.js` — UX, **`localStorage`** generation session, adaptive polling (tab visibility / focus); **never** add API keys.
-- `public/styles.css` — layout and components for the main UI (`index.html`).
+- [`src/config/recipe-constants.ts`](./src/config/recipe-constants.ts) — brand, product, design template IDs, persona slot count.
+- [`prompts/infer-personas.md`](./prompts/infer-personas.md) — persona quality and evidence rules.
+- [`src/lib/generate-image-ads.ts`](./src/lib/generate-image-ads.ts) — grid composition and prompt text.
+
+## Files to read for context if needed
+
+- [`src/workflow.ts`](./src/workflow.ts) — orchestrates audience creation + ad enqueue + status batching.
+- [`src/http/server.ts`](./src/http/server.ts) — HTTP surface the browser calls.
+- [`public/app.js`](./public/app.js) — UI flow, polling, localStorage session.
 
 ## Safety
 
-- Do not commit real `.env` files or keys.
-- This is not production code: minimal validation, no auth. **CSV/persona picks** live in **`sessionStorage`** (tab-scoped). **Image-ad queue rows** live in **`localStorage`** until the user clears them or overwrites with a new run.
-
-## Suggested next tasks for an agent
-
-1. **Fill in** Static Ads Lab ids in `recipe-constants.ts` (`brandId`, `productId`, optional `productVariantId`, at least one `designTemplateIds` entry). The stock recipe uses empty values until you configure your workspace.
-2. Tune **`PERSONA_SLOT_COUNT`** and persona inference (`TARGET_PERSONA_COUNT`, prompts) to match your agency workflow.
-3. Add optional CLI entry that reads a CSV path (if you need automation without the browser).
+Never commit real `.env` files or keys. Never put the Static Ads Lab key in browser code.

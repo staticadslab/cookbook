@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { resolveGeminiModelId } from '../config/gemini-defaults.js';
 import { PERSONA_SLOT_COUNT } from '../config/recipe-constants.js';
 import { getRecipeConstantsIssues } from './check-recipe-constants.js';
 
@@ -51,8 +50,6 @@ export function getRecipeEnvStatus(): {
   missing: string[];
   canInferPersonas: boolean;
   canGenerateAds: boolean;
-  /** Model id used for persona inference (public; override with GEMINI_MODEL). */
-  geminiModelId: string;
   /** Lines to show if `recipe-constants.ts` still has missing or empty SAL ids. */
   recipeConstantsIssues: string[];
   /** True when SAL-related constants look configured (Generate step may still fail for other reasons). */
@@ -71,7 +68,6 @@ export function getRecipeEnvStatus(): {
     missing,
     canInferPersonas: geminiOk,
     canGenerateAds: geminiOk && salOk && recipeConstantsReady,
-    geminiModelId: resolveGeminiModelId(),
     recipeConstantsIssues,
     recipeConstantsReady,
     personaSlotCount: PERSONA_SLOT_COUNT,

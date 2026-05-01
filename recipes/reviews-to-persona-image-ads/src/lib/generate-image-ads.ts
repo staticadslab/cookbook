@@ -91,6 +91,9 @@ export async function enqueueImageAdsForPersonas(
 
   const withAudiences: { persona: Persona; audienceId: string }[] = [];
 
+  // POC tradeoff: every run creates fresh audiences, so re-running with the same
+  // personas leaves duplicates in the SAL workspace. A production version would
+  // dedupe by `name` (or maintain a persona -> audience_id mapping) before POSTing.
   for (const persona of personas) {
     const audience = await createAudience(apiKey, {
       product_id: RECIPE_IDS.productId,

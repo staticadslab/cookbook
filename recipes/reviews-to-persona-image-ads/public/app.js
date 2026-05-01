@@ -1,7 +1,22 @@
 /**
  * Browser-side UI only. No API keys.
- * - CSV + personas: sessionStorage
- * - Image-ad queue rows: localStorage (survives refresh; polling is server-side batched SAL reads)
+ *
+ * Where state lives:
+ * - sessionStorage  — the cleaned reviews list, the inferred personas, and the user's checkbox
+ *                     selections. Tab-scoped: closing the tab clears it.
+ * - localStorage    — the in-flight image-ad generation rows (one per persona × design template).
+ *                     Survives refreshes so the user can come back to a job table that's still
+ *                     ticking, instead of losing track of a run that's already been billed for.
+ *
+ * Polling pattern (one batched server call per tick — never N parallel SAL calls from the
+ * browser; the server fans the IDs into a single `GET /v1/image-ads?ids=...`):
+ * - POLL_FAST_MS (~4s) while any row is still processing.
+ * - One POLL_SLOW_MS (~30s) consistency tail after every row is terminal, then idle.
+ * - Pauses entirely when the tab is hidden (visibilitychange) and refreshes once on focus.
+ *
+ * If the job table looks stuck, the most common cause is a stale localStorage entry pointing
+ * at IDs that no longer exist (different env / different SAL workspace). The "Clear saved
+ * generation" button in the UI wipes it.
  */
 
 const UI_LOG_PREFIX = '[reviews-to-persona-image-ads UI]';
@@ -47,7 +62,6 @@ const jobsWrap = document.querySelector('#jobsWrap');
 const jobsHint = document.querySelector('#jobsHint');
 const btnClearGeneration = document.querySelector('#btnClearGeneration');
 const envBanner = document.querySelector('#envBanner');
-const inferModelMetaInner = document.querySelector('#inferModelMetaInner');
 
 /** @type {string[]} */
 let reviews = [];
@@ -558,7 +572,6 @@ async function showEnvBannerIfNeeded() {
   try {
     const res = await fetch('/api/config/env-status');
     if (!res.ok) {
-      setInferPersonasModelLabel(null);
       envBanner.className = 'env-banner env-banner--error';
       envBanner.innerHTML = `<strong class="env-banner__title">Could not read env status</strong><p>Server returned ${res.status}. Is <code>npm start</code> running in the recipe folder?</p>`;
       console.warn(UI_LOG_PREFIX, 'env-status HTTP error', res.status);
@@ -568,7 +581,6 @@ async function showEnvBannerIfNeeded() {
     const data = await res.json();
     const missing = data.missing ?? [];
     const recipeIssues = data.recipeConstantsIssues ?? [];
-    setInferPersonasModelLabel(data.geminiModelId);
     if (typeof data.personaSlotCount === 'number' && data.personaSlotCount >= 1) {
       personaSlotCount = data.personaSlotCount;
     }
@@ -622,26 +634,11 @@ async function showEnvBannerIfNeeded() {
 
     envBanner.innerHTML = parts.join('');
   } catch (e) {
-    setInferPersonasModelLabel(null);
     envBanner.className = 'env-banner env-banner--error';
     envBanner.innerHTML =
       '<strong class="env-banner__title">Could not verify environment</strong><p>Open this app at <code>http://localhost:9000</code> (or the port in <code>PORT</code>; run <code>npm start</code> in <code>recipes/reviews-to-persona-image-ads</code>). If you opened the HTML file from disk (<code>file://</code>), API checks will not work.</p>';
     console.warn(UI_LOG_PREFIX, 'env-status fetch failed', e);
   }
-}
-
-/**
- * Show which Gemini model the server uses for step 2 (from env-status).
- * @param {string | null | undefined} modelId
- */
-function setInferPersonasModelLabel(modelId) {
-  if (!inferModelMetaInner) return;
-  if (!modelId) {
-    inferModelMetaInner.textContent =
-      'Could not load model id — is the dev server running? Personas use whatever the server sets (see GEMINI_MODEL).';
-    return;
-  }
-  inferModelMetaInner.innerHTML = `This step calls <code>${escapeHtml(modelId)}</code> via the AI SDK. Override with env <code>GEMINI_MODEL</code> and restart the server.`;
 }
 
 (async () => {

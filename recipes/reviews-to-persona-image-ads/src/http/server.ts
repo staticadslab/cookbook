@@ -36,7 +36,20 @@ export function createServer() {
 
   const publicDir = join(process.cwd(), 'public');
 
-  /** Which required env vars are unset (names only — never values). */
+  /**
+   * Status banner feed for the UI. Names only — never values.
+   *
+   * Response shape (see `getRecipeEnvStatus` in `src/lib/env.ts`):
+   * - missing[]              — names of unset required env vars (`API_KEY_GOOGLE_GEMINI`,
+   *                            `API_KEY_STATIC_ADS_LAB`).
+   * - canInferPersonas       — true once the Gemini key is set.
+   * - canGenerateAds         — true once both keys are set AND recipe-constants look filled in.
+   * - recipeConstantsIssues  — human-readable lines about missing/placeholder ids in
+   *                            `src/config/recipe-constants.ts` (brand, product, templates).
+   * - recipeConstantsReady   — `recipeConstantsIssues.length === 0`.
+   * - personaSlotCount       — the value of `PERSONA_SLOT_COUNT`, so the browser's checkbox
+   *                            limit always matches whatever's set in `recipe-constants.ts`.
+   */
   app.get('/api/config/env-status', (_req, res) => {
     res.json(getRecipeEnvStatus());
   });
@@ -46,9 +59,6 @@ export function createServer() {
   app.post('/api/reviews/clean', (req, res) => {
     try {
       const body = cleanBodySchema.parse(req.body);
-      recipeLog('POST /api/reviews/clean', {
-        csvChars: body.csvText.length,
-      });
       const result = cleanReviewsFromCsvText(body.csvText);
       recipeLog('POST /api/reviews/clean ok', {
         reviewCount: result.reviews.length,
@@ -65,9 +75,11 @@ export function createServer() {
   app.post('/api/personas', async (req, res) => {
     try {
       const body = personasBodySchema.parse(req.body);
-      recipeLog('POST /api/personas', { reviewCount: body.reviews.length });
       const personas = await inferPersonasFromReviews(body.reviews);
-      recipeLog('POST /api/personas ok', { personaCount: personas.length });
+      recipeLog('POST /api/personas ok', {
+        reviewCount: body.reviews.length,
+        personaCount: personas.length,
+      });
       res.json({ personas });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -80,12 +92,11 @@ export function createServer() {
   app.post('/api/generate/start', async (req, res) => {
     try {
       const body = selectedPersonasRequestSchema.parse(req.body);
-      recipeLog('POST /api/generate/start', {
-        personaSlots: body.personas.length,
-        personaLabels: body.personas.map((p) => p.shortLabel),
-      });
       const rows = await enqueueAdsForSelectedPersonas(body.personas);
-      recipeLog('POST /api/generate/start ok', { rowCount: rows.length });
+      recipeLog('POST /api/generate/start ok', {
+        personaSlots: body.personas.length,
+        rowCount: rows.length,
+      });
       res.json({ rows });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -101,15 +112,10 @@ export function createServer() {
   app.post('/api/generate/status', async (req, res) => {
     try {
       const body = generationStatusBodySchema.parse(req.body);
-      recipeLog('POST /api/generate/status', { rowCount: body.rows.length });
       const { rows, allTerminal } = await getGenerationStatus(body.rows);
-      const completed = rows.filter((r) => r.imageAd?.status === 'completed').length;
-      const failed = rows.filter((r) => r.imageAd?.status === 'failed').length;
       recipeLog('POST /api/generate/status ok', {
+        rowCount: rows.length,
         allTerminal,
-        completed,
-        failed,
-        missingImageAd: rows.filter((r) => !r.imageAd).length,
       });
       res.json({ rows, allTerminal });
     } catch (err) {
