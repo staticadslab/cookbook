@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reviews to benefit image ads (recipe)</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="envBanner" class="env-banner env-banner--pending" role="status">
+      Checking server environment…
+    </div>
+    <h1>Reviews to benefit image ads</h1>
+    <p class="muted">
+      Proof-of-concept: clean 4–5★ reviews, pull out what customers praise, chart how often each benefit
+      theme shows up, then generate flat Meta image ads for the themes you pick. Review rows live in
+      <strong>sessionStorage</strong> (tab-scoped). Generation job ids use
+      <strong>localStorage</strong> so you can refresh while ads finish.
+    </p>
+
+    <section id="workspaceSummary" class="workspace-summary" aria-labelledby="workspaceSummaryHeading">
+      <h2 id="workspaceSummaryHeading" class="workspace-summary__heading">What you’re generating for</h2>
+      <div id="workspaceSummaryBody" class="workspace-summary__body">
+        <p class="muted">Loading workspace from the server…</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>1. Paste or load CSV</h2>
+      <p class="muted">Needs <code>rating</code> and <code>review</code> columns (optional <code>customer_name</code>, <code>date</code>).</p>
+      <label for="csvFile">Upload CSV</label>
+      <input id="csvFile" type="file" accept=".csv,text/csv" />
+      <label for="csvText" style="margin-top: 0.75rem">CSV contents</label>
+      <textarea id="csvText" placeholder="Paste CSV here…"></textarea>
+      <div class="row">
+        <button type="button" id="btnClean">Clean reviews</button>
+        <span id="cleanMeta" class="muted"></span>
+      </div>
+      <p id="cleanError" class="error" hidden></p>
+    </section>
+
+    <section>
+      <h2>2. Analyze reviews</h2>
+      <p class="muted">
+        The server calls Gemini twice: once per batch of reviews for neutral signals and quotes, then once to
+        group those into benefit themes. One click here runs the full sequence (watch the terminal for chunk
+        progress on large files).
+      </p>
+      <div class="row">
+        <button type="button" id="btnAnalyze" disabled>Analyze reviews</button>
+      </div>
+      <p id="analyzeStatus" class="muted step-status" role="status" aria-live="polite"></p>
+      <p id="analyzeError" class="error" hidden></p>
+    </section>
+
+    <section id="sectionChart" hidden>
+      <h2>3. How often each benefit shows up</h2>
+      <p class="muted">Counts use distinct reviews per benefit (a review can support more than one benefit).</p>
+      <div id="chartHero" class="chart-hero"></div>
+    </section>
+
+    <section id="sectionSelect" hidden>
+      <h2>4. Choose benefits & templates</h2>
+      <p id="selectHint" class="muted">Select at least one benefit and at least one design template.</p>
+      <div id="benefitList"></div>
+      <h3 class="muted" style="margin-top: 1rem; font-size: 0.95rem">Design templates</h3>
+      <div id="templateList" class="template-grid"></div>
+      <div class="row" style="margin-top: 0.75rem">
+        <button type="button" id="btnGenerate" disabled>Generate image ads</button>
+        <span id="selectSummary" class="muted"></span>
+      </div>
+      <p id="generateError" class="error" hidden></p>
+      <p id="generateStatus" class="muted"></p>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>5. Generation &amp; results</h2>
+        <button type="button" id="btnClearGeneration" class="secondary" hidden>Clear saved generation</button>
+      </div>
+      <p class="muted" id="jobsHint" hidden>
+        The server batches status checks. Polling pauses when this tab is hidden.
+      </p>
+      <div id="jobsWrap" class="jobs-wrap" hidden>
+        <table class="jobs-table" aria-label="Image ad generation jobs">
+          <thead>
+            <tr>
+              <th scope="col">Job</th>
+              <th scope="col">Status</th>
+              <th scope="col">Created</th>
+            </tr>
+          </thead>
+          <tbody id="jobsTableBody"></tbody>
+        </table>
+      </div>
+      <div id="results" class="grid"></div>
+    </section>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
