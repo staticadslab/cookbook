@@ -1,12 +1,19 @@
-import { PERSONA_SLOT_COUNT, RECIPE_IDS } from '../config/recipe-constants.js';
+import { PERSONA_SLOT_COUNT } from '../config/recipe-constants.js';
 import { recipeLog } from './debug-log.js';
 import type { Persona } from './generate-personas.js';
 import {
   createAudience,
   createImageAd,
   type CreateImageAdPayload,
-  type SalImageAd,
 } from './staticadslab-client.js';
+
+export type PersonaWorkspacePick = {
+  brandId: string;
+  productId: string;
+  templateIds: string[];
+  /** Omit when unused */
+  productVariantId?: string;
+};
 
 /** One grid cell after SAL accepts the image-ad create (before queue finishes). */
 export type QueuedImageAdRow = {
@@ -73,15 +80,18 @@ async function mapWithLimit<T, R>(
 export async function enqueueImageAdsForPersonas(
   apiKey: string,
   personas: Persona[],
+  workspace: PersonaWorkspacePick,
 ): Promise<QueuedImageAdRow[]> {
   if (personas.length !== PERSONA_SLOT_COUNT) {
     throw new Error(`Expected exactly ${PERSONA_SLOT_COUNT} personas, got ${personas.length}`);
   }
 
-  const templateIds = [...RECIPE_IDS.designTemplateIds];
+  const templateIds = [...workspace.templateIds];
   if (templateIds.length === 0) {
-    throw new Error('RECIPE_IDS.designTemplateIds must contain at least one template id');
+    throw new Error('Select at least one design template.');
   }
+
+  const pv = workspace.productVariantId?.trim() ?? '';
 
   recipeLog('generateImageAds grid (enqueue only)', {
     personas: personas.length,
@@ -96,7 +106,7 @@ export async function enqueueImageAdsForPersonas(
   // dedupe by `name` (or maintain a persona -> audience_id mapping) before POSTing.
   for (const persona of personas) {
     const audience = await createAudience(apiKey, {
-      product_id: RECIPE_IDS.productId,
+      product_id: workspace.productId,
       name: persona.shortLabel.slice(0, 255),
       description: audienceDescriptionFromPersona(persona),
     });
@@ -118,13 +128,13 @@ export async function enqueueImageAdsForPersonas(
     for (const designTemplateId of templateIds) {
       const payload: CreateImageAdPayload = {
         design_template_id: designTemplateId,
-        brand_id: RECIPE_IDS.brandId,
-        product_id: RECIPE_IDS.productId,
+        brand_id: workspace.brandId,
+        product_id: workspace.productId,
         audience_id: audienceId,
         prompt: imageAdPromptFromPersona(persona),
       };
-      if (RECIPE_IDS.productVariantId) {
-        payload.product_variant_id = RECIPE_IDS.productVariantId;
+      if (pv.length > 0) {
+        payload.product_variant_id = pv;
       }
       createSpecs.push({ persona, designTemplateId, payload });
     }

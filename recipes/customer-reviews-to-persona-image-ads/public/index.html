@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Reviews to persona image ads (recipe)</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -15,7 +15,7 @@
       Proof-of-concept recipe: clean 4–5★ reviews, infer personas with Gemini, create Static Ads Lab
       audiences + image ads. CSV and personas use <strong>sessionStorage</strong> (cleared on tab close).
       <strong>Image-ad generation progress</strong> is stored in <strong>localStorage</strong> so you can
-      refresh and still see the job table; clear it from step 4 when you want a fresh run.
+      refresh and still see the job table; clear it from step 5 when you want a fresh run.
     </p>
 
     <section>
@@ -32,8 +32,15 @@
       <p id="cleanError" class="error" hidden></p>
     </section>
 
+    <section id="workspaceSummary" class="workspace-summary" aria-labelledby="workspaceSummaryHeading">
+      <h2 id="workspaceSummaryHeading">2. Workspace</h2>
+      <div id="workspaceSummaryBody" class="workspace-summary__body">
+        <p class="muted">Loading brands and products…</p>
+      </div>
+    </section>
+
     <section id="sectionInferPersonas">
-      <h2>2. Infer personas</h2>
+      <h2>3. Infer personas</h2>
       <div class="row">
         <button type="button" id="btnPersonas" disabled>Infer personas (Gemini)</button>
       </div>
@@ -41,9 +48,11 @@
     </section>
 
     <section>
-      <h2>3. Select personas</h2>
+      <h2>4. Select personas & templates</h2>
       <p id="selectHint" class="muted">Infer personas first.</p>
       <div id="personaList"></div>
+      <h3 class="muted" style="margin-top: 1rem; font-size: 0.95rem">Design templates</h3>
+      <div id="templateList" class="template-grid"></div>
       <div class="row">
         <button type="button" id="btnGenerate" disabled>Generate image ads</button>
         <span id="selectCount" class="muted">0 / 5 selected</span>
@@ -54,7 +63,7 @@
 
     <section>
       <div class="section-head">
-        <h2>4. Generation &amp; results</h2>
+        <h2>5. Generation &amp; results</h2>
         <button type="button" id="btnClearGeneration" class="secondary" hidden>
           Clear saved generation
         </button>

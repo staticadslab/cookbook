@@ -12,14 +12,14 @@ The user is a marketing-agency owner, not an engineer. Narrate in plain English.
 
 ## Files most users want to edit
 
-- [`src/config/recipe-constants.ts`](./src/config/recipe-constants.ts) — brand, product, design template IDs, persona slot count.
+- [`src/config/recipe-constants.ts`](./src/config/recipe-constants.ts) — how many personas must be picked; max design templates per run.
 - [`prompts/infer-personas.md`](./prompts/infer-personas.md) — persona quality and evidence rules.
 - [`src/lib/generate-image-ads.ts`](./src/lib/generate-image-ads.ts) — grid composition and prompt text.
 
 ## Files to read for context if needed
 
 - [`src/workflow.ts`](./src/workflow.ts) — orchestrates audience creation + ad enqueue + status batching.
-- [`src/http/server.ts`](./src/http/server.ts) — HTTP surface the browser calls.
+- [`src/http/server.ts`](./src/http/server.ts) — HTTP routes for personas, workspace catalog/context, generation, polling.
 - [`public/app.js`](./public/app.js) — UI flow, polling, localStorage session.
 
 ## Safety

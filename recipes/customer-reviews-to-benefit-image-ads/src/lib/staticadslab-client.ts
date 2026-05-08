@@ -20,6 +20,12 @@ const DEFAULT_IMAGE_AD_POLL_INTERVAL_MS = 3000;
 
 type ApiEnvelope<T> = { data: T; meta: Record<string, unknown> };
 
+type SalListEnvelope<T> = {
+  data: T[];
+  has_more: boolean;
+  meta: Record<string, unknown>;
+};
+
 export type SalBrand = {
   id: string;
   name: string;
@@ -295,6 +301,84 @@ export async function getDesignTemplate(
     `/v1/design-templates/${encodeURIComponent(id)}`,
   );
   return out.data;
+}
+
+/**
+ * Cursor-paginates SAL list endpoints (see https://www.staticadslab.com/docs/reference/pagination).
+ * POC tradeoff: serial pages only (API does not support parallel cursor fetches).
+ */
+async function salListAllPages<T extends { id: string }>(
+  apiKey: string,
+  resourcePath: string,
+  filters: Record<string, string | undefined> = {},
+): Promise<T[]> {
+  const items: T[] = [];
+  let startingAfter: string | undefined;
+
+  for (;;) {
+    const params = new URLSearchParams();
+    params.set("limit", "100");
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== "") params.set(k, v);
+    }
+    if (startingAfter) params.set("starting_after", startingAfter);
+
+    const out = await salJson<SalListEnvelope<T>>(
+      apiKey,
+      `${resourcePath}?${params.toString()}`,
+    );
+    items.push(...out.data);
+    if (!out.has_more || out.data.length === 0) break;
+    startingAfter = out.data[out.data.length - 1].id;
+  }
+
+  return items;
+}
+
+/** `GET /v1/brands` — workspace brands (paginated internally). */
+export async function listAllBrands(apiKey: string): Promise<SalBrand[]> {
+  return salListAllPages<SalBrand>(apiKey, "/v1/brands");
+}
+
+/** `GET /v1/products` — optional brand filter (`brand_id`). */
+export async function listAllProducts(
+  apiKey: string,
+  brandId?: string,
+): Promise<SalProduct[]> {
+  const filters = brandId ? { brand_id: brandId } : {};
+  return salListAllPages<SalProduct>(apiKey, "/v1/products", filters);
+}
+
+/** `GET /v1/product-variants?product_id=…` */
+export async function listProductVariantsForProduct(
+  apiKey: string,
+  productId: string,
+): Promise<SalProductVariant[]> {
+  return salListAllPages<SalProductVariant>(
+    apiKey,
+    "/v1/product-variants",
+    { product_id: productId },
+  );
+}
+
+/** `GET /v1/audiences?product_id=…` */
+export async function listAudiencesForProduct(
+  apiKey: string,
+  productId: string,
+): Promise<SalAudience[]> {
+  return salListAllPages<SalAudience>(apiKey, "/v1/audiences", {
+    product_id: productId,
+  });
+}
+
+/** `GET /v1/design-templates?status=…` — summaries include preview + reference URLs. */
+export async function listDesignTemplates(
+  apiKey: string,
+  filters: { status?: string } = {},
+): Promise<SalDesignTemplate[]> {
+  return salListAllPages<SalDesignTemplate>(apiKey, "/v1/design-templates", {
+    status: filters.status,
+  });
 }
 
 export async function createImageAd(

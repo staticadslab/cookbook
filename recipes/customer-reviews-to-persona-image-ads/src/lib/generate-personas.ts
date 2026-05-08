@@ -4,7 +4,7 @@ import { generateObject } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { resolveGeminiModelId } from '../config/gemini-defaults.js';
-import { PERSONA_SLOT_COUNT } from '../config/recipe-constants.js';
+import { MAX_TEMPLATES_PER_RUN, PERSONA_SLOT_COUNT } from '../config/recipe-constants.js';
 import { recipeLog } from './debug-log.js';
 import { requireEnv } from './env.js';
 
@@ -38,12 +38,18 @@ const personasOutputSchema = z.object({
 
 export type Persona = z.infer<typeof personaSchema>;
 
-/** Body for POST /api/generate/start — exactly PERSONA_SLOT_COUNT full persona objects. */
+/** Body for POST /api/generate/start — personas plus workspace/template picks from the UI. */
 export const selectedPersonasRequestSchema = z.object({
-  personas: z
-    .array(personaSchema)
-    .length(PERSONA_SLOT_COUNT),
+  personas: z.array(personaSchema).length(PERSONA_SLOT_COUNT),
+  brandId: z.string().min(1),
+  productId: z.string().min(1),
+  productVariantId: z.string().optional(),
+  templateIds: z.array(z.string().min(1)).min(1).max(MAX_TEMPLATES_PER_RUN),
 });
+
+export type SelectedPersonasGenerationRequest = z.infer<
+  typeof selectedPersonasRequestSchema
+>;
 
 function loadInferPersonasPrompt(): string {
   const path = resolve(process.cwd(), 'prompts/infer-personas.md');

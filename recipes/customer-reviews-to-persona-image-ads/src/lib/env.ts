@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { PERSONA_SLOT_COUNT } from '../config/recipe-constants.js';
-import { getRecipeConstantsIssues } from './check-recipe-constants.js';
+import {
+  MAX_TEMPLATES_PER_RUN,
+  PERSONA_SLOT_COUNT,
+} from '../config/recipe-constants.js';
 
 /**
  * Minimal `.env` loader (no extra dependency). Does not override existing process.env.
@@ -50,27 +52,20 @@ export function getRecipeEnvStatus(): {
   missing: string[];
   canInferPersonas: boolean;
   canGenerateAds: boolean;
-  /** Lines to show if `recipe-constants.ts` still has missing or empty SAL ids. */
-  recipeConstantsIssues: string[];
-  /** True when SAL-related constants look configured (Generate step may still fail for other reasons). */
-  recipeConstantsReady: boolean;
-  /** Same as `PERSONA_SLOT_COUNT` in `recipe-constants.ts` (UI must select this many personas). */
   personaSlotCount: number;
+  maxTemplatesPerRun: number;
 } {
   const geminiOk = isSet('API_KEY_GOOGLE_GEMINI');
   const salOk = isSet('API_KEY_STATIC_ADS_LAB');
   const missing: string[] = [];
   if (!geminiOk) missing.push('API_KEY_GOOGLE_GEMINI');
   if (!salOk) missing.push('API_KEY_STATIC_ADS_LAB');
-  const recipeConstantsIssues = getRecipeConstantsIssues();
-  const recipeConstantsReady = recipeConstantsIssues.length === 0;
   return {
     missing,
     canInferPersonas: geminiOk,
-    canGenerateAds: geminiOk && salOk && recipeConstantsReady,
-    recipeConstantsIssues,
-    recipeConstantsReady,
+    canGenerateAds: geminiOk && salOk,
     personaSlotCount: PERSONA_SLOT_COUNT,
+    maxTemplatesPerRun: MAX_TEMPLATES_PER_RUN,
   };
 }
 

@@ -5,7 +5,8 @@
  *
  * 1. LOAD CONFIG
  *    - API keys from environment (Gemini + Static Ads Lab).
- *    - Resource ids from `src/config/recipe-constants.ts` (brand, product, variant, design templates).
+ *    - `recipe-constants.ts` only holds persona-slot count + max templates per run. Brand/product/variant and
+ *      template IDs are chosen from SAL list endpoints in the workspace UI (see `/api/workspace/*` routes).
  *
  * 2. INGEST REVIEWS (CSV TEXT)
  *    - Parse with real CSV rules; require `rating` + `review` columns.
@@ -15,8 +16,9 @@
  * 3. INFER PERSONAS (GEMINI, STRUCTURED OUTPUT)
  *    - Produce TARGET_PERSONA_COUNT personas with shortLabel, narrative, confidence, testimonials[].
  *
- * 4. SELECT PERSONAS (BROWSER)
- *    - User picks PERSONA_SLOT_COUNT personas; selections live in sessionStorage (data may be lost on refresh).
+ * 4. SELECT PERSONAS + TEMPLATES (BROWSER)
+ *    - User picks PERSONA_SLOT_COUNT personas, brand/product/optional variant from SAL workspace lists, and
+ *      completed design templates (thumbnail cards prefer reference image URLs). Choices live in sessionStorage.
  *
  * 5. CREATE ONE SAL AUDIENCE PER SELECTED PERSONA
  *    - name = shortLabel; description = narrative + testimonial bullets.
@@ -25,7 +27,7 @@
  *    - POST every persona × design_template_id row in parallel (SAL queues work server-side).
  *    - Server returns row ids immediately; browser persists them in localStorage and polls
  *      POST /api/generate/status, which issues one batched GET /v1/image-ads?ids=... per tick.
- *    - Default grid size = PERSONA_SLOT_COUNT × designTemplateIds.length (see recipe-constants).
+ *    - Default grid size = PERSONA_SLOT_COUNT × templateIds.length (chosen in-browser per run).
  *
  * 7. PREVIEW + DOWNLOAD
  *    - Static UI lists `image_url` per ad for download (no ZIP in this POC).

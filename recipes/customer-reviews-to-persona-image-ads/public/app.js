@@ -25,6 +25,10 @@ const STORAGE_KEYS = {
   reviews: 'recipe_reviews_json',
   personas: 'recipe_personas_json',
   selected: 'recipe_selected_indices_json',
+  wsBrand: 'pers_ws_brand_id',
+  wsProduct: 'pers_ws_product_id',
+  wsVariant: 'pers_ws_variant_id',
+  selTemplates: 'pers_sel_templates_json',
 };
 
 const GENERATION_STORAGE_VERSION = 1;
@@ -40,6 +44,7 @@ const POLL_SLOW_MS = 30000;
  * Fallback until `GET /api/config/env-status` returns (matches `PERSONA_SLOT_COUNT` in recipe-constants).
  */
 let personaSlotCount = 5;
+let maxTemplatesPerRun = 3;
 
 const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 
@@ -62,6 +67,8 @@ const jobsWrap = document.querySelector('#jobsWrap');
 const jobsHint = document.querySelector('#jobsHint');
 const btnClearGeneration = document.querySelector('#btnClearGeneration');
 const envBanner = document.querySelector('#envBanner');
+const workspaceSummaryBody = document.querySelector('#workspaceSummaryBody');
+const templateList = document.querySelector('#templateList');
 
 /** @type {string[]} */
 let reviews = [];
@@ -69,6 +76,23 @@ let reviews = [];
 let personas = [];
 /** @type {Set<number>} */
 let selectedIndices = new Set();
+
+/** @type {Array<{ id: string; name: string }>} */
+let catalogBrands = [];
+/** @type {Array<{ id: string; brand_id: string; name: string }>} */
+let catalogProducts = [];
+/** @type {Array<{ id: string; preview_url: string | null; reference_image_url: string | null; aspect_ratio: string | null; ad_format: string | null }>} */
+let designCatalog = [];
+/** @type {Array<{ id: string; product_id: string; name: string }>} */
+let productVariants = [];
+
+let selectedBrandId = '';
+let selectedProductId = '';
+/** Optional SKU */
+let selectedVariantId = '';
+let workspaceCatalogError = '';
+/** @type {Set<string>} */
+let selectedTemplateIds = new Set();
 
 let pollTimerId = null;
 /** Avoid overlapping POST /api/generate/status calls (focus + visibility + timer). */
@@ -84,11 +108,26 @@ function loadSession() {
     if (p) personas = JSON.parse(p);
     const s = sessionStorage.getItem(STORAGE_KEYS.selected);
     if (s) selectedIndices = new Set(JSON.parse(s));
+    selectedBrandId = sessionStorage.getItem(STORAGE_KEYS.wsBrand)?.trim() ?? '';
+    selectedProductId = sessionStorage.getItem(STORAGE_KEYS.wsProduct)?.trim() ?? '';
+    selectedVariantId = sessionStorage.getItem(STORAGE_KEYS.wsVariant)?.trim() ?? '';
+    const st = sessionStorage.getItem(STORAGE_KEYS.selTemplates);
+    if (st) selectedTemplateIds = new Set(JSON.parse(st));
   } catch {
     reviews = [];
     personas = [];
     selectedIndices = new Set();
+    selectedBrandId = '';
+    selectedProductId = '';
+    selectedVariantId = '';
+    selectedTemplateIds = new Set();
   }
+}
+
+function persistWorkspaceSelections() {
+  sessionStorage.setItem(STORAGE_KEYS.wsBrand, selectedBrandId);
+  sessionStorage.setItem(STORAGE_KEYS.wsProduct, selectedProductId);
+  sessionStorage.setItem(STORAGE_KEYS.wsVariant, selectedVariantId);
 }
 
 function persistSession() {
@@ -98,6 +137,11 @@ function persistSession() {
     STORAGE_KEYS.selected,
     JSON.stringify([...selectedIndices]),
   );
+  sessionStorage.setItem(
+    STORAGE_KEYS.selTemplates,
+    JSON.stringify([...selectedTemplateIds]),
+  );
+  persistWorkspaceSelections();
 }
 
 /** Persist only stable row keys (not SAL snapshots). */
@@ -395,10 +439,272 @@ function syncUiAfterClean() {
   btnPersonas.disabled = reviews.length === 0;
 }
 
+function productsForSelectedBrand() {
+  if (!selectedBrandId) return [];
+  return catalogProducts.filter((p) => p.brand_id === selectedBrandId);
+}
+
+function coerceSelectionsAfterCatalogLoad() {
+  const bid = catalogBrands.some((b) => b.id === selectedBrandId) ? selectedBrandId : '';
+  selectedBrandId = bid;
+  const prods = productsForSelectedBrand();
+  selectedProductId = prods.some((p) => p.id === selectedProductId) ? selectedProductId : '';
+  persistWorkspaceSelections();
+}
+
+function pruneTemplateSelectionToCatalog() {
+  const valid = new Set(designCatalog.map((t) => t.id));
+  for (const id of [...selectedTemplateIds]) {
+    if (!valid.has(id)) selectedTemplateIds.delete(id);
+  }
+}
+
+async function refreshProductVariants() {
+  workspaceCatalogError = '';
+  productVariants = [];
+  if (!selectedProductId) {
+    selectedVariantId = '';
+    renderWorkspacePickers();
+    persistWorkspaceSelections();
+    updateSelectionUi();
+    return;
+  }
+  try {
+    const res = await fetch(
+      `/api/workspace/product/${encodeURIComponent(selectedProductId)}/context`,
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    productVariants = Array.isArray(data.variants) ? data.variants : [];
+    if (!productVariants.some((v) => v.id === selectedVariantId)) {
+      selectedVariantId = '';
+    }
+    renderWorkspacePickers();
+  } catch (e) {
+    workspaceCatalogError = e instanceof Error ? e.message : String(e);
+    selectedVariantId = '';
+    renderWorkspacePickers();
+  }
+  persistWorkspaceSelections();
+  updateSelectionUi();
+}
+
+function renderWorkspacePickers() {
+  if (!workspaceSummaryBody) return;
+
+  const errLine = workspaceCatalogError
+    ? `<p class="error workspace-summary__err">${escapeHtml(workspaceCatalogError)}</p>`
+    : '';
+
+  const brandOpts =
+    `<option value="">${catalogBrands.length ? 'Choose a brand…' : 'No brands returned'}</option>` +
+    catalogBrands
+      .map((b) => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)}</option>`)
+      .join('');
+
+  const prods = productsForSelectedBrand();
+  const prodOpts =
+    `<option value="">${selectedBrandId ? (prods.length ? 'Choose a product…' : 'No products for this brand') : 'Choose a brand first'}</option>` +
+    prods
+      .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
+      .join('');
+
+  const variantOpts =
+    `<option value="">No variant (optional)</option>` +
+    productVariants
+      .map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.name)}</option>`)
+      .join('');
+
+  workspaceSummaryBody.innerHTML = `
+    <div class="workspace-summary__pickers">
+      <label class="workspace-summary__field">
+        Brand
+        <select id="pwBrand" class="workspace-summary__select">${brandOpts}</select>
+      </label>
+      <label class="workspace-summary__field">
+        Product
+        <select id="pwProduct" class="workspace-summary__select"${selectedBrandId ? '' : ' disabled'}>${prodOpts}</select>
+      </label>
+      <label class="workspace-summary__field">
+        Product variant (optional)
+        <select id="pwVariant" class="workspace-summary__select"${selectedProductId ? '' : ' disabled'}>${variantOpts}</select>
+      </label>
+    </div>
+    <p class="muted workspace-summary__hint">New audiences are created from your personas; picks here set brand, product, and optional SKU imagery.</p>
+    ${errLine}
+  `;
+
+  const bEl = workspaceSummaryBody.querySelector('#pwBrand');
+  const pEl = workspaceSummaryBody.querySelector('#pwProduct');
+  const vEl = workspaceSummaryBody.querySelector('#pwVariant');
+  if (bEl instanceof HTMLSelectElement) bEl.value = selectedBrandId;
+  if (pEl instanceof HTMLSelectElement) pEl.value = selectedProductId;
+  if (vEl instanceof HTMLSelectElement) vEl.value = selectedVariantId;
+}
+
+function attachWorkspaceListeners() {
+  if (!workspaceSummaryBody) return;
+  workspaceSummaryBody.addEventListener('change', (ev) => {
+    const t = ev.target;
+    if (!(t instanceof HTMLSelectElement)) return;
+    if (t.id === 'pwBrand') {
+      selectedBrandId = t.value.trim();
+      selectedProductId = '';
+      selectedVariantId = '';
+      productVariants = [];
+      persistWorkspaceSelections();
+      void refreshProductVariants();
+      return;
+    }
+    if (t.id === 'pwProduct') {
+      selectedProductId = t.value.trim();
+      selectedVariantId = '';
+      persistWorkspaceSelections();
+      void refreshProductVariants();
+      return;
+    }
+    if (t.id === 'pwVariant') {
+      selectedVariantId = t.value.trim();
+      persistWorkspaceSelections();
+      updateSelectionUi();
+    }
+  });
+}
+
+async function loadWorkspaceCatalog() {
+  if (!workspaceSummaryBody) return;
+  workspaceCatalogError = '';
+  workspaceSummaryBody.innerHTML =
+    '<p class="muted workspace-summary__loading">Loading brands, products, and templates…</p>';
+  try {
+    const res = await fetch('/api/workspace/catalog');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    catalogBrands = Array.isArray(data.brands) ? data.brands : [];
+    catalogProducts = Array.isArray(data.products) ? data.products : [];
+    designCatalog = Array.isArray(data.designTemplates) ? data.designTemplates : [];
+    coerceSelectionsAfterCatalogLoad();
+    pruneTemplateSelectionToCatalog();
+    await refreshProductVariants();
+    persistSession();
+    void renderTemplatePickGrid();
+    updateSelectionUi();
+  } catch (e) {
+    workspaceCatalogError = e instanceof Error ? e.message : String(e);
+    catalogBrands = [];
+    catalogProducts = [];
+    designCatalog = [];
+    selectedTemplateIds = new Set();
+    workspaceSummaryBody.innerHTML = `<p class="error">${escapeHtml(workspaceCatalogError)}</p>`;
+    void renderTemplatePickGrid();
+    updateSelectionUi();
+  }
+}
+
+function workspaceSelectionReady() {
+  return Boolean(selectedBrandId && selectedProductId);
+}
+
+function templatesSelectionReady() {
+  return selectedTemplateIds.size >= 1;
+}
+
+async function renderTemplatePickGrid() {
+  if (!templateList) return;
+
+  if (designCatalog.length === 0) {
+    templateList.innerHTML =
+      '<p class="muted">No completed design templates loaded. Fix the Static Ads Lab key above or refresh.</p>';
+    templateList.className = 'template-grid';
+    updateSelectionUi();
+    return;
+  }
+
+  templateList.className = 'template-grid template-grid--visual';
+  templateList.innerHTML = '';
+
+  for (const meta of designCatalog) {
+    const tid = meta.id;
+    const refUrl = String(meta.reference_image_url || '').trim();
+    const previewUrl = String(meta.preview_url || '').trim();
+    const thumbUrl = refUrl || previewUrl;
+    const checked = selectedTemplateIds.has(tid);
+
+    const label = document.createElement('label');
+    label.className = 'template-card';
+    if (checked) label.classList.add('template-card--checked');
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'template-card__check';
+    if (checked) input.checked = true;
+
+    const media = document.createElement('div');
+    media.className = 'template-card__media';
+
+    if (thumbUrl) {
+      const img = document.createElement('img');
+      img.src = thumbUrl;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.addEventListener('error', () => {
+        img.remove();
+        const ph = document.createElement('div');
+        ph.className = 'template-card__placeholder';
+        ph.textContent = 'Image unavailable';
+        media.appendChild(ph);
+      });
+      media.appendChild(img);
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'template-card__placeholder';
+      ph.textContent = 'No reference image';
+      media.appendChild(ph);
+    }
+
+    const foot = document.createElement('div');
+    foot.className = 'template-card__foot';
+    const idSpan = document.createElement('span');
+    idSpan.className = 'template-card__id';
+    idSpan.textContent = truncateId(tid, 40);
+    foot.appendChild(idSpan);
+    const badgeParts = [meta.ad_format, meta.aspect_ratio].filter(Boolean);
+    if (badgeParts.length > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'template-card__badge';
+      badge.textContent = badgeParts.join(' · ');
+      foot.appendChild(badge);
+    }
+
+    input.addEventListener('change', () => {
+      if (input.checked) {
+        if (selectedTemplateIds.size >= maxTemplatesPerRun && !selectedTemplateIds.has(tid)) {
+          input.checked = false;
+          return;
+        }
+        selectedTemplateIds.add(tid);
+      } else {
+        selectedTemplateIds.delete(tid);
+      }
+      label.classList.toggle('template-card--checked', input.checked);
+      persistSession();
+      updateSelectionUi();
+    });
+
+    label.appendChild(input);
+    label.appendChild(media);
+    label.appendChild(foot);
+    templateList.appendChild(label);
+  }
+
+  updateSelectionUi();
+}
+
 function renderPersonas() {
   personaList.innerHTML = '';
   if (personas.length === 0) {
     updateSelectionUi();
+    void renderTemplatePickGrid();
     return;
   }
 
@@ -438,6 +744,7 @@ function renderPersonas() {
   });
 
   updateSelectionUi();
+  void renderTemplatePickGrid();
 }
 
 function updateSelectionUi() {
@@ -447,8 +754,22 @@ function updateSelectionUi() {
     btnGenerate.disabled = true;
     return;
   }
-  selectHint.textContent = `Check exactly ${personaSlotCount} personas. Each becomes one Static Ads Lab audience.`;
-  btnGenerate.disabled = selectedIndices.size !== personaSlotCount;
+
+  const personasOk = selectedIndices.size === personaSlotCount;
+  const workspaceOk = workspaceSelectionReady();
+  const templatesOk = templatesSelectionReady();
+
+  if (!workspaceOk) {
+    selectHint.textContent = 'Choose brand and product under Workspace.';
+  } else if (!templatesOk) {
+    selectHint.textContent = `Select at least one design template (up to ${maxTemplatesPerRun}).`;
+  } else if (!personasOk) {
+    selectHint.textContent = `Check exactly ${personaSlotCount} personas (each becomes a new audience).`;
+  } else {
+    selectHint.textContent = 'Ready to generate.';
+  }
+
+  btnGenerate.disabled = !(personasOk && workspaceOk && templatesOk);
 }
 
 function escapeHtml(s) {
@@ -520,7 +841,16 @@ btnGenerate.addEventListener('click', async () => {
     console.log(UI_LOG_PREFIX, 'generate/start', {
       personaLabels: chosen.map((p) => p.shortLabel),
     });
-    const data = await postJson('/api/generate/start', { personas: chosen });
+    /** @type {Record<string, unknown>} */
+    const payload = {
+      personas: chosen,
+      brandId: selectedBrandId,
+      productId: selectedProductId,
+      templateIds: [...selectedTemplateIds],
+    };
+    const pv = selectedVariantId.trim();
+    if (pv) payload.productVariantId = pv;
+    const data = await postJson('/api/generate/start', payload);
     const rows = data.rows ?? [];
     saveGenerationRows(rows);
     showGenerationChrome(rows.length > 0);
@@ -531,7 +861,11 @@ btnGenerate.addEventListener('click', async () => {
     showError(generateError, e instanceof Error ? e.message : String(e));
     generateStatus.textContent = '';
   } finally {
-    btnGenerate.disabled = selectedIndices.size !== personaSlotCount;
+    btnGenerate.disabled = !(
+      selectedIndices.size === personaSlotCount &&
+      workspaceSelectionReady() &&
+      templatesSelectionReady()
+    );
   }
 });
 
@@ -559,92 +893,68 @@ window.addEventListener('focus', () => {
 });
 
 /**
- * Env + recipe-constants strip at the top (#envBanner, above the h1).
- * Yellow: missing env vars and/or empty SAL ids in recipe-constants.ts.
- * Green: env + constants look ready for this POC.
- * Red: cannot reach server.
+ * Env banner: missing keys vs ready. Workspace picks are validated in-browser after catalog loads.
  */
 async function showEnvBannerIfNeeded() {
   if (!envBanner) return;
   envBanner.className = 'env-banner env-banner--pending';
-  envBanner.textContent = 'Checking server environment and recipe config…';
+  envBanner.textContent = 'Checking server environment…';
 
   try {
     const res = await fetch('/api/config/env-status');
     if (!res.ok) {
       envBanner.className = 'env-banner env-banner--error';
-      envBanner.innerHTML = `<strong class="env-banner__title">Could not read env status</strong><p>Server returned ${res.status}. Is <code>npm start</code> running in the recipe folder?</p>`;
+      envBanner.innerHTML = `<strong class="env-banner__title">Could not read env status</strong><p>Server returned ${res.status}. Is <code>npm start</code> running?</p>`;
       console.warn(UI_LOG_PREFIX, 'env-status HTTP error', res.status);
       return;
     }
 
     const data = await res.json();
     const missing = data.missing ?? [];
-    const recipeIssues = data.recipeConstantsIssues ?? [];
     if (typeof data.personaSlotCount === 'number' && data.personaSlotCount >= 1) {
       personaSlotCount = data.personaSlotCount;
     }
+    if (typeof data.maxTemplatesPerRun === 'number' && data.maxTemplatesPerRun >= 1) {
+      maxTemplatesPerRun = data.maxTemplatesPerRun;
+    }
 
     const envOk = missing.length === 0;
-    const constantsOk = recipeIssues.length === 0;
-    const allOk = envOk && constantsOk;
 
-    if (allOk) {
+    if (envOk) {
       envBanner.className = 'env-banner env-banner--ok';
       envBanner.innerHTML =
-        '<strong class="env-banner__title">Ready for this POC</strong><p class="muted">API keys are set and <code>src/config/recipe-constants.ts</code> has no missing SAL ids detected. If a step still fails, check terminal logs and your Static Ads Lab workspace.</p>';
-      console.log(UI_LOG_PREFIX, 'env-status ok', { envOk, constantsOk });
+        '<strong class="env-banner__title">API keys look set</strong><p class="muted">Pick brand & product below. If a step still fails, check the terminal logs and your Static Ads Lab wallet balance.</p>';
+      console.log(UI_LOG_PREFIX, 'env-status ok');
       return;
     }
 
-    console.warn(UI_LOG_PREFIX, 'env-status warnings', { missing, recipeIssues });
+    const list = missing.map((k) => `<li><code>${escapeHtml(k)}</code></li>`).join('');
     envBanner.className = 'env-banner';
-    const parts = [];
-
-    if (!envOk) {
-      const list = missing.map((k) => `<li><code>${escapeHtml(k)}</code></li>`).join('');
-      parts.push(
-        '<strong class="env-banner__title">Missing environment variables</strong>',
-        '<p>Unset or empty (use <code>.env</code> or <code>.env.local</code>):</p>',
-        `<ul>${list}</ul>`,
-        '<p class="muted">This banner only lists names, not values.</p>',
-        '<ul class="muted env-banner__tips">',
-        '<li><strong>Clean reviews</strong> works without API keys.</li>',
-        '<li><strong>Infer personas</strong> needs <code>API_KEY_GOOGLE_GEMINI</code>.</li>',
-        '<li><strong>Generate image ads</strong> needs both API keys and valid recipe constants below.</li>',
-        '</ul>',
-      );
-    }
-
-    if (!constantsOk) {
-      const cList = recipeIssues.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
-      parts.push(
-        '<strong class="env-banner__title">Recipe constants</strong>',
-        '<p>Fill in required ids in <code>src/config/recipe-constants.ts</code> (needed for <strong>Generate image ads</strong>):</p>',
-        `<ul>${cList}</ul>`,
-        '<p class="muted">Checks look for <code>REPLACE_ME</code> or empty values — ids are not validated against the Static Ads Lab API.</p>',
-      );
-    }
-
-    if (envOk && !constantsOk) {
-      parts.unshift(
-        '<p class="muted" style="margin-top:0"><strong>API keys look set.</strong> Finish the constant ids before generating ads.</p>',
-      );
-    }
-
-    envBanner.innerHTML = parts.join('');
+    envBanner.innerHTML = [
+      '<strong class="env-banner__title">Missing environment variables</strong>',
+      '<p>Unset or empty (try <code>.env</code> or <code>.env.local</code>):</p>',
+      `<ul>${list}</ul>`,
+      '<ul class="muted env-banner__tips">',
+      '<li><strong>Clean reviews</strong> works without keys.</li>',
+      '<li><strong>Infer personas</strong> needs <code>API_KEY_GOOGLE_GEMINI</code>.</li>',
+      '<li><strong>Generate</strong> needs both Gemini and Static Ads Lab keys.</li>',
+      '</ul>',
+    ].join('');
+    console.warn(UI_LOG_PREFIX, 'env-status warnings', { missing });
   } catch (e) {
     envBanner.className = 'env-banner env-banner--error';
     envBanner.innerHTML =
-      '<strong class="env-banner__title">Could not verify environment</strong><p>Open this app at <code>http://localhost:9000</code> (or the port in <code>PORT</code>; run <code>npm start</code> in <code>recipes/customer-reviews-to-persona-image-ads</code>). If you opened the HTML file from disk (<code>file://</code>), API checks will not work.</p>';
+      '<strong class="env-banner__title">Could not verify environment</strong><p>Open this app via the local server (<code>npm start</code> in this recipe folder).</p>';
     console.warn(UI_LOG_PREFIX, 'env-status fetch failed', e);
   }
 }
 
 (async () => {
   loadSession();
+  attachWorkspaceListeners();
   syncUiAfterClean();
   await showEnvBannerIfNeeded();
+  await loadWorkspaceCatalog();
   renderPersonas();
   restoreGenerationUi();
 })();

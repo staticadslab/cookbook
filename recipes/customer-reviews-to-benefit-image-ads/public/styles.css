@@ -632,3 +632,42 @@ details.benefit-card__sources {
   margin-bottom: 0.25rem;
 }
 
+.workspace-summary__pickers {
+  display: grid;
+  gap: 0.75rem;
+}
+
+@media (min-width: 540px) {
+  .workspace-summary__pickers {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.workspace-summary__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.workspace-summary__select {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #c5cae9;
+  font: inherit;
+  font-weight: 500;
+  background: #fff;
+}
+
+.workspace-summary__hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+}
+
+.workspace-summary__err {
+  margin: 0.75rem 0 0;
+}
+

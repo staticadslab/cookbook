@@ -10,6 +10,10 @@ const STORAGE_KEYS = {
   benefits: 'bf_recipe_benefits_json',
   selBenefits: 'bf_sel_benefits_json',
   selTemplates: 'bf_sel_templates_json',
+  wsBrand: 'bf_ws_brand_id',
+  wsProduct: 'bf_ws_product_id',
+  wsAudience: 'bf_ws_audience_id',
+  wsVariant: 'bf_ws_variant_id',
 };
 
 const GENERATION_STORAGE_VERSION = 1;
@@ -20,8 +24,24 @@ const POLL_FAST_MS = 4000;
 const POLL_SLOW_MS = 30000;
 
 let maxTemplatesPerRun = 3;
-/** @type {string[]} */
-let templatePool = [];
+
+/** @type {Array<{ id: string; name: string }>} */
+let catalogBrands = [];
+/** @type {Array<{ id: string; brand_id: string; name: string }>} */
+let catalogProducts = [];
+/** @type {Array<{ id: string; status?: string; preview_url: string | null; reference_image_url: string | null; aspect_ratio: string | null; ad_format: string | null; industry: string | null }>} */
+let designCatalog = [];
+/** @type {Array<{ id: string; product_id: string; name: string }>} */
+let productVariants = [];
+/** @type {Array<{ id: string; product_id: string; name: string }>} */
+let productAudiences = [];
+
+let selectedBrandId = '';
+let selectedProductId = '';
+let selectedAudienceId = '';
+/** Empty string = no variant */
+let selectedVariantId = '';
+let workspaceCatalogError = '';
 
 const csvFile = document.querySelector('#csvFile');
 const csvText = document.querySelector('#csvText');
@@ -78,13 +98,28 @@ function loadSession() {
     if (sb) selectedBenefitIndices = new Set(JSON.parse(sb));
     const st = sessionStorage.getItem(STORAGE_KEYS.selTemplates);
     if (st) selectedTemplateIds = new Set(JSON.parse(st));
+    selectedBrandId = sessionStorage.getItem(STORAGE_KEYS.wsBrand)?.trim() ?? '';
+    selectedProductId = sessionStorage.getItem(STORAGE_KEYS.wsProduct)?.trim() ?? '';
+    selectedAudienceId = sessionStorage.getItem(STORAGE_KEYS.wsAudience)?.trim() ?? '';
+    selectedVariantId = sessionStorage.getItem(STORAGE_KEYS.wsVariant)?.trim() ?? '';
   } catch {
     rows = [];
     extractions = [];
     benefits = [];
     selectedBenefitIndices = new Set();
     selectedTemplateIds = new Set();
+    selectedBrandId = '';
+    selectedProductId = '';
+    selectedAudienceId = '';
+    selectedVariantId = '';
   }
+}
+
+function persistWorkspaceSelections() {
+  sessionStorage.setItem(STORAGE_KEYS.wsBrand, selectedBrandId);
+  sessionStorage.setItem(STORAGE_KEYS.wsProduct, selectedProductId);
+  sessionStorage.setItem(STORAGE_KEYS.wsAudience, selectedAudienceId);
+  sessionStorage.setItem(STORAGE_KEYS.wsVariant, selectedVariantId);
 }
 
 function persistSession() {
@@ -96,6 +131,7 @@ function persistSession() {
     JSON.stringify([...selectedBenefitIndices].sort((a, c) => a - c)),
   );
   sessionStorage.setItem(STORAGE_KEYS.selTemplates, JSON.stringify([...selectedTemplateIds]));
+  persistWorkspaceSelections();
 }
 
 function stableGenerationRows(jobRows) {
@@ -514,47 +550,23 @@ function renderBenefitAndTemplatePicks() {
 async function renderTemplatePickGrid() {
   if (!templateList) return;
 
-  if (templatePool.length === 0) {
+  if (designCatalog.length === 0) {
     templateList.innerHTML =
-      '<p class="muted">Add design template ids in <code>recipe-constants.ts</code>.</p>';
+      '<p class="muted">No completed design templates loaded. Check your Static Ads Lab key and workspace, then refresh.</p>';
     templateList.className = 'template-grid';
     updateSelectSummary();
     return;
   }
 
   templateList.className = 'template-grid template-grid--visual';
-  templateList.innerHTML = '<p class="muted template-grid__loading">Loading previews…</p>';
-
-  /** @type {Map<string, Record<string, unknown>>} */
-  let byId = new Map();
-  let salKeyMissing = false;
-  try {
-    const res = await fetch('/api/design-templates/pool');
-    const data = await res.json().catch(() => ({}));
-    salKeyMissing = data.salKeyMissing === true;
-    const list = Array.isArray(data.templates) ? data.templates : [];
-    byId = new Map(list.map((t) => [t.id, t]));
-  } catch {
-    byId = new Map();
-  }
-
   templateList.innerHTML = '';
 
-  if (salKeyMissing) {
-    const note = document.createElement('p');
-    note.className = 'muted template-grid__note';
-    note.innerHTML =
-      'Set your Static Ads Lab key to load template previews from the API. You can still select by id.';
-    templateList.appendChild(note);
-  }
-
-  for (const tid of templatePool) {
-    const meta = byId.get(tid);
-    const refUrl = String(meta?.reference_image_url || '').trim();
-    const previewUrl = String(meta?.preview_url || '').trim();
-    /** Prefer the original reference upload when the API has it; else the rendered layout preview. */
-    const primaryUrl = refUrl || previewUrl;
-    const hasAltThumb = Boolean(refUrl && previewUrl && refUrl !== previewUrl);
+  for (const meta of designCatalog) {
+    const tid = meta.id;
+    const refUrl = String(meta.reference_image_url || '').trim();
+    const previewUrl = String(meta.preview_url || '').trim();
+    /** Prefer reference_image_url for thumbnails (original upload); fall back if missing. */
+    const thumbUrl = refUrl || previewUrl;
     const checked = selectedTemplateIds.has(tid);
 
     const label = document.createElement('label');
@@ -569,27 +581,23 @@ async function renderTemplatePickGrid() {
     const media = document.createElement('div');
     media.className = 'template-card__media';
 
-    /** @type {HTMLImageElement | null} */
-    let thumbImg = null;
-    if (primaryUrl) {
+    if (thumbUrl) {
       const img = document.createElement('img');
-      thumbImg = img;
-      img.src = primaryUrl;
+      img.src = thumbUrl;
       img.alt = '';
       img.loading = 'lazy';
       img.addEventListener('error', () => {
         img.remove();
-        thumbImg = null;
         const ph = document.createElement('div');
         ph.className = 'template-card__placeholder';
-        ph.textContent = 'Preview unavailable';
+        ph.textContent = 'Image unavailable';
         media.appendChild(ph);
       });
       media.appendChild(img);
     } else {
       const ph = document.createElement('div');
       ph.className = 'template-card__placeholder';
-      ph.textContent = meta?.fetchError ? 'Could not load' : 'No preview';
+      ph.textContent = 'No reference image';
       media.appendChild(ph);
     }
 
@@ -599,28 +607,12 @@ async function renderTemplatePickGrid() {
     idSpan.className = 'template-card__id';
     idSpan.textContent = truncateId(tid, 40);
     foot.appendChild(idSpan);
-    const badgeParts = [meta?.ad_format, meta?.aspect_ratio].filter(Boolean);
+    const badgeParts = [meta.ad_format, meta.aspect_ratio].filter(Boolean);
     if (badgeParts.length > 0) {
       const badge = document.createElement('span');
       badge.className = 'template-card__badge';
       badge.textContent = badgeParts.join(' · ');
       foot.appendChild(badge);
-    }
-
-    if (hasAltThumb && thumbImg) {
-      let showingReference = Boolean(refUrl);
-      const toggleBtn = document.createElement('button');
-      toggleBtn.type = 'button';
-      toggleBtn.className = 'secondary template-card__thumb-toggle';
-      toggleBtn.textContent = showingReference ? 'Layout preview' : 'Original';
-      toggleBtn.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        showingReference = !showingReference;
-        thumbImg.src = showingReference ? refUrl : previewUrl;
-        toggleBtn.textContent = showingReference ? 'Layout preview' : 'Original';
-      });
-      foot.appendChild(toggleBtn);
     }
 
     input.addEventListener('change', () => {
@@ -647,175 +639,247 @@ async function renderTemplatePickGrid() {
   updateSelectSummary();
 }
 
+function workspaceSelectionReady() {
+  return Boolean(selectedBrandId && selectedProductId && selectedAudienceId);
+}
+
 function updateSelectSummary() {
   const bt = selectedBenefitIndices.size;
   const tt = selectedTemplateIds.size;
   selectSummary.textContent = `${bt} benefit(s), ${tt} template(s) · ${bt * tt} ad(s)`;
-  const ok = bt >= 1 && tt >= 1;
+  const ok = bt >= 1 && tt >= 1 && workspaceSelectionReady();
   btnGenerate.disabled = !ok;
-  selectHint.textContent = ok
-    ? 'Ready to generate.'
-    : `Pick at least one benefit and one template (up to ${maxTemplatesPerRun} templates).`;
+  if (!workspaceSelectionReady()) {
+    selectHint.textContent = 'Pick a brand, product, audience, then benefits and templates.';
+  } else {
+    selectHint.textContent = ok
+      ? 'Ready to generate.'
+      : `Pick at least one benefit and one template (up to ${maxTemplatesPerRun} templates).`;
+  }
 }
 
-/**
- * Renders brand, product, variant (emphasized), and audience from GET /api/config/env-status.
- * @param {Record<string, unknown> | null | undefined} statusPayload Full JSON from env-status (includes recipeContext + flags).
- */
-function renderRecipeContext(statusPayload) {
-  if (!workspaceSummaryBody) return;
+function productsForSelectedBrand() {
+  if (!selectedBrandId) return [];
+  return catalogProducts.filter((p) => p.brand_id === selectedBrandId);
+}
 
-  const ctx = statusPayload?.recipeContext;
-  const namesFromSal = statusPayload?.recipeContextNamesFromSal === true;
-  const labelWarnings = Array.isArray(statusPayload?.recipeContextLabelWarnings)
-    ? statusPayload.recipeContextLabelWarnings
-    : [];
+function coerceSelectionsAfterCatalogLoad() {
+  const bid = catalogBrands.some((b) => b.id === selectedBrandId) ? selectedBrandId : '';
+  selectedBrandId = bid;
+  const prods = productsForSelectedBrand();
+  selectedProductId = prods.some((p) => p.id === selectedProductId) ? selectedProductId : '';
+  persistWorkspaceSelections();
+}
 
-  if (!ctx || typeof ctx !== 'object') {
-    workspaceSummaryBody.innerHTML =
-      '<p class="muted">Open this page through the recipe server to see your workspace summary.</p>';
+async function refreshProductContext() {
+  workspaceCatalogError = '';
+  productVariants = [];
+  productAudiences = [];
+  if (!selectedProductId) {
+    selectedAudienceId = '';
+    selectedVariantId = '';
+    renderWorkspacePickers();
+    persistWorkspaceSelections();
+    updateSelectSummary();
     return;
   }
+  try {
+    const res = await fetch(
+      `/api/workspace/product/${encodeURIComponent(selectedProductId)}/context`,
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    productVariants = Array.isArray(data.variants) ? data.variants : [];
+    productAudiences = Array.isArray(data.audiences) ? data.audiences : [];
+    if (!productAudiences.some((a) => a.id === selectedAudienceId)) {
+      selectedAudienceId = '';
+    }
+    if (!productVariants.some((v) => v.id === selectedVariantId)) {
+      selectedVariantId = '';
+    }
+    renderWorkspacePickers();
+  } catch (e) {
+    workspaceCatalogError = e instanceof Error ? e.message : String(e);
+    selectedAudienceId = '';
+    selectedVariantId = '';
+    renderWorkspacePickers();
+  }
+  persistWorkspaceSelections();
+  updateSelectSummary();
+}
 
-  const brandLabel = String(ctx.brandLabel ?? '').trim();
-  const productLabel = String(ctx.productLabel ?? '').trim();
-  const variantLabel = String(ctx.productVariantLabel ?? '').trim();
-  const audienceLabel = String(ctx.audienceLabel ?? '').trim();
+/** Build workspace `<select>`s from in-memory catalogs. */
+function renderWorkspacePickers() {
+  if (!workspaceSummaryBody) return;
 
-  const brandId = String(ctx.brandId ?? '').trim();
-  const productId = String(ctx.productId ?? '').trim();
-  const variantId = String(ctx.productVariantId ?? '').trim();
-  const audienceId = String(ctx.audienceId ?? '').trim();
+  const errLine = workspaceCatalogError
+    ? `<p class="error workspace-summary__err">${escapeHtml(workspaceCatalogError)}</p>`
+    : '';
 
-  const ph = (hint) =>
-    `<span class="workspace-summary__placeholder">${escapeHtml(hint)}</span>`;
+  const brandOpts =
+    `<option value="">${catalogBrands.length ? 'Choose a brand…' : 'No brands returned'}</option>` +
+    catalogBrands
+      .map((b) => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)}</option>`)
+      .join('');
 
-  const hintNoKey = 'Names load when the server has your Static Ads Lab key and valid recipe ids.';
-  const hintFailed = 'Could not load this name from Static Ads Lab.';
+  const prods = productsForSelectedBrand();
+  const prodOpts =
+    `<option value="">${selectedBrandId ? (prods.length ? 'Choose a product…' : 'No products for this brand') : 'Choose a brand first'}</option>` +
+    prods
+      .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
+      .join('');
 
-  const brandLine = brandLabel
-    ? escapeHtml(brandLabel)
-    : namesFromSal
-      ? ph(hintFailed)
-      : ph(hintNoKey);
-  const audienceLine = audienceLabel
-    ? escapeHtml(audienceLabel)
-    : namesFromSal
-      ? ph(hintFailed)
-      : ph(hintNoKey);
+  const audOpts =
+    `<option value="">${selectedProductId ? (productAudiences.length ? 'Choose an audience…' : 'No audiences for this product') : 'Choose a product first'}</option>` +
+    productAudiences
+      .map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`)
+      .join('');
 
-  const productLine = productLabel
-    ? escapeHtml(productLabel)
-    : namesFromSal
-      ? ph(hintFailed)
-      : ph(hintNoKey);
-  const variantLine = variantId
-    ? variantLabel
-      ? escapeHtml(variantLabel)
-      : namesFromSal
-        ? ph(hintFailed)
-        : ph(hintNoKey)
-    : ph('No variant id in recipe constants');
-
-  const variantIdBlock = variantId
-    ? `<p class="workspace-summary__id">${escapeHtml(variantId)}</p>`
-    : `<p class="workspace-summary__id workspace-summary__placeholder">No variant id set</p>`;
-
-  const warningsBlock =
-    labelWarnings.length > 0
-      ? `<ul class="workspace-summary__warnings muted">${labelWarnings
-          .map((w) => `<li>${escapeHtml(String(w))}</li>`)
-          .join('')}</ul>`
-      : '';
+  const variantOpts =
+    `<option value="">No variant (optional)</option>` +
+    productVariants
+      .map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.name)}</option>`)
+      .join('');
 
   workspaceSummaryBody.innerHTML = `
-    <div class="workspace-summary__meta">
-      <div class="workspace-summary__meta-item">
-        <span class="workspace-summary__meta-label">Brand</span>
-        <span class="workspace-summary__meta-value">${brandLine}</span>
-        <span class="workspace-summary__id">${escapeHtml(brandId || '—')}</span>
-      </div>
-      <div class="workspace-summary__meta-item">
-        <span class="workspace-summary__meta-label">Audience</span>
-        <span class="workspace-summary__meta-value">${audienceLine}</span>
-        <span class="workspace-summary__id">${escapeHtml(audienceId || '—')}</span>
-      </div>
+    <div class="workspace-summary__pickers">
+      <label class="workspace-summary__field">
+        Brand
+        <select id="wsBrand" class="workspace-summary__select">${brandOpts}</select>
+      </label>
+      <label class="workspace-summary__field">
+        Product
+        <select id="wsProduct" class="workspace-summary__select"${selectedBrandId ? '' : ' disabled'}>${prodOpts}</select>
+      </label>
+      <label class="workspace-summary__field">
+        Audience
+        <select id="wsAudience" class="workspace-summary__select"${selectedProductId ? '' : ' disabled'}>${audOpts}</select>
+      </label>
+      <label class="workspace-summary__field">
+        Product variant (optional)
+        <select id="wsVariant" class="workspace-summary__select"${selectedProductId ? '' : ' disabled'}>${variantOpts}</select>
+      </label>
     </div>
-    <div class="workspace-summary__hero">
-      <div class="workspace-summary__tile workspace-summary__tile--product">
-        <p class="workspace-summary__tile-eyebrow">Product</p>
-        <p class="workspace-summary__tile-title">${productLine}</p>
-        <p class="workspace-summary__id">${escapeHtml(productId || '—')}</p>
-      </div>
-      <div class="workspace-summary__tile workspace-summary__tile--variant">
-        <p class="workspace-summary__tile-eyebrow">Product variant</p>
-        <p class="workspace-summary__tile-title">${variantLine}</p>
-        ${variantIdBlock}
-      </div>
-    </div>
-    ${warningsBlock}
+    <p class="muted workspace-summary__hint">Products follow the selected brand; audiences follow the selected product.</p>
+    ${errLine}
   `;
+
+  const bEl = workspaceSummaryBody.querySelector('#wsBrand');
+  const pEl = workspaceSummaryBody.querySelector('#wsProduct');
+  const aEl = workspaceSummaryBody.querySelector('#wsAudience');
+  const vEl = workspaceSummaryBody.querySelector('#wsVariant');
+  if (bEl instanceof HTMLSelectElement) bEl.value = selectedBrandId;
+  if (pEl instanceof HTMLSelectElement) pEl.value = selectedProductId;
+  if (aEl instanceof HTMLSelectElement) aEl.value = selectedAudienceId;
+  if (vEl instanceof HTMLSelectElement) vEl.value = selectedVariantId;
+}
+
+function attachWorkspaceListeners() {
+  if (!workspaceSummaryBody) return;
+  workspaceSummaryBody.addEventListener('change', (ev) => {
+    const t = ev.target;
+    if (!(t instanceof HTMLSelectElement)) return;
+    if (t.id === 'wsBrand') {
+      selectedBrandId = t.value.trim();
+      selectedProductId = '';
+      selectedAudienceId = '';
+      selectedVariantId = '';
+      productVariants = [];
+      productAudiences = [];
+      persistWorkspaceSelections();
+      void refreshProductContext();
+      return;
+    }
+    if (t.id === 'wsProduct') {
+      selectedProductId = t.value.trim();
+      selectedAudienceId = '';
+      selectedVariantId = '';
+      persistWorkspaceSelections();
+      void refreshProductContext();
+      return;
+    }
+    if (t.id === 'wsAudience') {
+      selectedAudienceId = t.value.trim();
+      persistWorkspaceSelections();
+      updateSelectSummary();
+      return;
+    }
+    if (t.id === 'wsVariant') {
+      selectedVariantId = t.value.trim();
+      persistWorkspaceSelections();
+      updateSelectSummary();
+    }
+  });
+}
+
+async function loadWorkspaceCatalog() {
+  if (!workspaceSummaryBody) return;
+  workspaceCatalogError = '';
+  workspaceSummaryBody.innerHTML =
+    '<p class="muted workspace-summary__loading">Loading brands, products, and templates…</p>';
+  try {
+    const res = await fetch('/api/workspace/catalog');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    catalogBrands = Array.isArray(data.brands) ? data.brands : [];
+    catalogProducts = Array.isArray(data.products) ? data.products : [];
+    designCatalog = Array.isArray(data.designTemplates) ? data.designTemplates : [];
+    coerceSelectionsAfterCatalogLoad();
+    await refreshProductContext();
+    void renderBenefitAndTemplatePicks();
+  } catch (e) {
+    workspaceCatalogError = e instanceof Error ? e.message : String(e);
+    catalogBrands = [];
+    catalogProducts = [];
+    designCatalog = [];
+    workspaceSummaryBody.innerHTML = `<p class="error">${escapeHtml(workspaceCatalogError)}</p>`;
+    void renderBenefitAndTemplatePicks();
+  }
 }
 
 async function showEnvBannerIfNeeded() {
   if (!envBanner) return;
   envBanner.className = 'env-banner env-banner--pending';
-  envBanner.textContent = 'Checking server environment and recipe config…';
+  envBanner.textContent = 'Checking server environment…';
 
   try {
     const res = await fetch('/api/config/env-status');
     if (!res.ok) {
       envBanner.className = 'env-banner env-banner--error';
       envBanner.innerHTML = `<strong class="env-banner__title">Could not read env status</strong><p>HTTP ${res.status}. Is <code>npm start</code> running?</p>`;
-      renderRecipeContext(null);
       return;
     }
 
     const data = await res.json();
-    renderRecipeContext(data);
     const missing = data.missing ?? [];
-    const recipeIssues = data.recipeConstantsIssues ?? [];
     if (typeof data.maxTemplatesPerRun === 'number') {
       maxTemplatesPerRun = data.maxTemplatesPerRun;
     }
-    if (Array.isArray(data.designTemplateIds)) {
-      templatePool = data.designTemplateIds.filter(Boolean);
-    }
 
     const envOk = missing.length === 0;
-    const constantsOk = recipeIssues.length === 0;
 
-    if (envOk && constantsOk) {
+    if (envOk) {
       envBanner.className = 'env-banner env-banner--ok';
       envBanner.innerHTML =
-        '<strong class="env-banner__title">Ready for this POC</strong><p class="muted">Keys and ids in <code>recipe-constants.ts</code> look filled in. Generation still needs a funded Static Ads Lab wallet.</p>';
+        '<strong class="env-banner__title">API keys look set</strong><p class="muted">Choose brand, product, and audience in the workspace card. Generation still needs a funded Static Ads Lab wallet.</p>';
       return;
     }
 
     envBanner.className = 'env-banner';
-    const parts = [];
-    if (!envOk) {
-      const list = missing.map((k) => `<li><code>${escapeHtml(k)}</code></li>`).join('');
-      parts.push(
-        '<strong class="env-banner__title">Missing environment variables</strong>',
-        `<ul>${list}</ul>`,
-        '<ul class="muted env-banner__tips">',
-        '<li><strong>Clean reviews</strong> needs no keys.</li>',
-        '<li><strong>Analyze reviews</strong> needs <code>API_KEY_GOOGLE_GEMINI</code>.</li>',
-        '<li><strong>Generate</strong> needs both keys and recipe constants.</li>',
-        '</ul>',
-      );
-    }
-    if (!constantsOk) {
-      const cList = recipeIssues.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
-      parts.push('<strong class="env-banner__title">Recipe constants</strong>', `<ul>${cList}</ul>`);
-    }
-    envBanner.innerHTML = parts.join('');
+    const list = missing.map((k) => `<li><code>${escapeHtml(k)}</code></li>`).join('');
+    envBanner.innerHTML = [
+      '<strong class="env-banner__title">Missing environment variables</strong>',
+      `<ul>${list}</ul>`,
+      '<ul class="muted env-banner__tips">',
+      '<li><strong>Clean reviews</strong> needs no keys.</li>',
+      '<li><strong>Analyze reviews</strong> needs <code>API_KEY_GOOGLE_GEMINI</code>.</li>',
+      '<li><strong>Generate</strong> needs both keys and a workspace pick above.</li>',
+      '</ul>',
+    ].join('');
   } catch {
     envBanner.className = 'env-banner env-banner--error';
     envBanner.innerHTML =
       '<strong class="env-banner__title">Could not verify environment</strong><p>Open this app via the local server (not a <code>file://</code> URL).</p>';
-    renderRecipeContext(null);
   }
 }
 
@@ -892,11 +956,19 @@ btnGenerate.addEventListener('click', async () => {
   const templateIds = [...selectedTemplateIds];
 
   try {
+    const workspace = {
+      brandId: selectedBrandId,
+      productId: selectedProductId,
+      audienceId: selectedAudienceId,
+    };
+    const pv = selectedVariantId.trim();
+    if (pv) workspace.productVariantId = pv;
     const data = await postJson('/api/generate/start', {
       rows,
       extractions,
       selectedBenefits: chosenBenefits,
       templateIds,
+      workspace,
     });
     const jobRows = data.rows ?? [];
     saveGenerationRows(jobRows);
@@ -953,7 +1025,9 @@ window.addEventListener('focus', () => {
 
 (async () => {
   loadSession();
+  attachWorkspaceListeners();
   await showEnvBannerIfNeeded();
+  await loadWorkspaceCatalog();
   syncAfterClean();
   if (benefits.length > 0) {
     renderChart();

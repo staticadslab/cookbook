@@ -3,14 +3,15 @@
  * The readable end-to-end story lives in comments on `main.ts`; this file only delegates.
  */
 
+import type { SelectedPersonasGenerationRequest } from './lib/generate-personas.js';
 import {
   enqueueImageAdsForPersonas,
+  type PersonaWorkspacePick,
   type QueuedImageAdRow,
 } from './lib/generate-image-ads.js';
 import { generatePersonasFromReviews } from './lib/generate-personas.js';
 import { requireEnv } from './lib/env.js';
 import { parseReviewsFromCsvText } from './lib/parse-reviews.js';
-import type { Persona } from './lib/generate-personas.js';
 import type { SalImageAd } from './lib/staticadslab-client.js';
 import { listImageAdsByIds } from './lib/staticadslab-client.js';
 
@@ -22,9 +23,18 @@ export async function inferPersonasFromReviews(reviews: string[]) {
   return generatePersonasFromReviews(reviews);
 }
 
-export async function enqueueAdsForSelectedPersonas(personas: Persona[]) {
+export async function enqueueAdsForSelectedPersonas(
+  body: SelectedPersonasGenerationRequest,
+): Promise<QueuedImageAdRow[]> {
   const apiKey = requireEnv('API_KEY_STATIC_ADS_LAB');
-  return enqueueImageAdsForPersonas(apiKey, personas);
+  const pv = body.productVariantId?.trim() ?? '';
+  const workspace: PersonaWorkspacePick = {
+    brandId: body.brandId,
+    productId: body.productId,
+    templateIds: body.templateIds,
+    ...(pv.length > 0 ? { productVariantId: pv } : {}),
+  };
+  return enqueueImageAdsForPersonas(apiKey, body.personas, workspace);
 }
 
 export type GenerationStatusRow = QueuedImageAdRow & {

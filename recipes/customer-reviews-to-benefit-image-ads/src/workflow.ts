@@ -10,6 +10,7 @@ import {
   enqueueBenefitImageAds,
   type BenefitGenerationStatusRow,
   type QueuedBenefitAdRow,
+  type RecipeWorkspacePick,
 } from './lib/generate-benefit-ads.js';
 import { requireEnv } from './lib/env.js';
 import { parseReviewRowsFromCsvText } from './lib/parse-reviews.js';
@@ -34,14 +35,24 @@ export async function runBenefitAnalyze(rows: ReviewRow[]): Promise<{
 }
 
 export async function enqueueAdsForSelectedBenefits(
+  workspace: RecipeWorkspacePick,
   selectedBenefits: DiscoveredBenefit[],
   templateIds: string[],
   rows: ReviewRow[],
   extractions: Pass1Extraction[],
 ): Promise<QueuedBenefitAdRow[]> {
   const apiKey = requireEnv('API_KEY_STATIC_ADS_LAB');
-  return enqueueBenefitImageAds(apiKey, selectedBenefits, templateIds, rows, extractions);
+  return enqueueBenefitImageAds(
+    apiKey,
+    workspace,
+    selectedBenefits,
+    templateIds,
+    rows,
+    extractions,
+  );
 }
+
+export type { RecipeWorkspacePick };
 
 export async function getBenefitGenerationStatus(
   rows: QueuedBenefitAdRow[],

@@ -1,12 +1,21 @@
 import express from 'express';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { MAX_TEMPLATES_PER_RUN, RECIPE_IDS } from '../config/recipe-constants.js';
+import { MAX_TEMPLATES_PER_RUN } from '../config/recipe-constants.js';
 import { discoveredBenefitSchema } from '../lib/benefit-discover-pass2.js';
 import { pass1ExtractionSchema } from '../lib/benefit-extraction-pass1.js';
 import { recipeLog, recipeWarn } from '../lib/debug-log.js';
 import { getRecipeEnvStatus } from '../lib/env.js';
-import { getDesignTemplate } from '../lib/staticadslab-client.js';
+import {
+  getAudience,
+  getProduct,
+  getProductVariant,
+  listAllBrands,
+  listAllProducts,
+  listAudiencesForProduct,
+  listDesignTemplates,
+  listProductVariantsForProduct,
+} from '../lib/staticadslab-client.js';
 import {
   cleanRowsFromCsvText,
   enqueueAdsForSelectedBenefits,
@@ -30,11 +39,19 @@ const analyzeRowsBodySchema = z.object({
   rows: z.array(reviewRowSchema).min(1),
 });
 
+const workspacePickSchema = z.object({
+  brandId: z.string().min(1),
+  productId: z.string().min(1),
+  audienceId: z.string().min(1),
+  productVariantId: z.string().optional(),
+});
+
 const generateBodySchema = z.object({
   rows: z.array(reviewRowSchema).min(1),
   extractions: z.array(pass1ExtractionSchema).min(1),
   selectedBenefits: z.array(discoveredBenefitSchema).min(1),
   templateIds: z.array(z.string().min(1)).min(1).max(MAX_TEMPLATES_PER_RUN),
+  workspace: workspacePickSchema,
 });
 
 const queuedRowSchema = z.object({
@@ -48,6 +65,29 @@ const generationStatusBodySchema = z.object({
   rows: z.array(queuedRowSchema).min(1),
 });
 
+async function validateBenefitWorkspace(
+  apiKey: string,
+  w: z.infer<typeof workspacePickSchema>,
+): Promise<void> {
+  const product = await getProduct(apiKey, w.productId);
+  if (product.brand_id !== w.brandId) {
+    throw new Error('The selected product does not belong to the selected brand.');
+  }
+  const audience = await getAudience(apiKey, w.audienceId);
+  if (audience.product_id !== w.productId) {
+    throw new Error('The selected audience does not belong to the selected product.');
+  }
+  const pv = w.productVariantId?.trim() ?? '';
+  if (pv.length > 0) {
+    const variant = await getProductVariant(apiKey, pv);
+    if (variant.product_id !== w.productId) {
+      throw new Error(
+        'The selected product variant does not belong to the selected product.',
+      );
+    }
+  }
+}
+
 export function createServer() {
   const app = express();
   app.use(express.json({ limit: '12mb' }));
@@ -58,70 +98,88 @@ export function createServer() {
     res.json(await getRecipeEnvStatus());
   });
 
-  app.get('/api/design-templates/pool', async (_req, res) => {
-    const ids = [...RECIPE_IDS.designTemplateIds];
+  app.get('/api/workspace/catalog', async (_req, res) => {
     const key = process.env.API_KEY_STATIC_ADS_LAB?.trim();
     if (!key) {
-      res.json({
-        salKeyMissing: true,
-        templates: ids.map((id) => ({
-          id,
-          status: null,
-          preview_url: null,
-          reference_image_url: null,
-          aspect_ratio: null,
-          ad_format: null,
-        })),
-      });
+      res
+        .status(400)
+        .json({ error: 'Set API_KEY_STATIC_ADS_LAB on the server to load your workspace.' });
       return;
     }
-
     try {
-      const settled = await Promise.allSettled(
-        ids.map((id) => getDesignTemplate(key, id)),
-      );
-      const templates = ids.map((id, i) => {
-        const r = settled[i];
-        if (r.status === 'fulfilled') {
-          const d = r.value;
-          return {
-            id: d.id,
-            status: d.status,
-            preview_url: d.preview_url,
-            reference_image_url: d.reference_image_url,
-            aspect_ratio: d.aspect_ratio,
-            ad_format: d.ad_format,
-          };
-        }
-        recipeWarn('GET /api/design-templates/pool item failed', id, String(r.reason));
-        return {
-          id,
-          status: null,
-          preview_url: null,
-          reference_image_url: null,
-          aspect_ratio: null,
-          ad_format: null,
-          fetchError:
-            r.reason instanceof Error ? r.reason.message : String(r.reason),
-        };
+      const [brands, products, designTemplates] = await Promise.all([
+        listAllBrands(key),
+        listAllProducts(key),
+        listDesignTemplates(key, { status: 'completed' }),
+      ]);
+      recipeLog('GET /api/workspace/catalog ok', {
+        brands: brands.length,
+        products: products.length,
+        designTemplates: designTemplates.length,
       });
-      recipeLog('GET /api/design-templates/pool ok', { count: templates.length });
-      res.json({ salKeyMissing: false, templates });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      recipeWarn('GET /api/design-templates/pool failed', message);
-      res.status(400).json({
-        error: message,
-        salKeyMissing: false,
-        templates: ids.map((id) => ({
-          id,
-          status: null,
-          preview_url: null,
-          reference_image_url: null,
-          aspect_ratio: null,
-          ad_format: null,
+      res.json({
+        brands: brands.map((b) => ({ id: b.id, name: b.name })),
+        products: products.map((p) => ({
+          id: p.id,
+          brand_id: p.brand_id,
+          name: p.name,
+        })),
+        designTemplates: designTemplates.map((t) => ({
+          id: t.id,
+          status: t.status,
+          preview_url: t.preview_url,
+          reference_image_url: t.reference_image_url,
+          aspect_ratio: t.aspect_ratio,
+          ad_format: t.ad_format,
+          industry: t.industry,
         })),
       });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      recipeWarn('GET /api/workspace/catalog failed', message);
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.get('/api/workspace/product/:productId/context', async (req, res) => {
+    const key = process.env.API_KEY_STATIC_ADS_LAB?.trim();
+    if (!key) {
+      res
+        .status(400)
+        .json({ error: 'Set API_KEY_STATIC_ADS_LAB on the server to load product context.' });
+      return;
+    }
+    const productId = String(req.params.productId ?? '').trim();
+    if (!productId) {
+      res.status(400).json({ error: 'product id is required' });
+      return;
+    }
+    try {
+      const [variants, audiences] = await Promise.all([
+        listProductVariantsForProduct(key, productId),
+        listAudiencesForProduct(key, productId),
+      ]);
+      recipeLog('GET /api/workspace/product/context ok', {
+        productId,
+        variants: variants.length,
+        audiences: audiences.length,
+      });
+      res.json({
+        variants: variants.map((v) => ({
+          id: v.id,
+          product_id: v.product_id,
+          name: v.name,
+        })),
+        audiences: audiences.map((a) => ({
+          id: a.id,
+          product_id: a.product_id,
+          name: a.name,
+        })),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      recipeWarn('GET /api/workspace/product/context failed', message);
+      res.status(400).json({ error: message });
     }
   });
 
@@ -169,7 +227,17 @@ export function createServer() {
   app.post('/api/generate/start', async (req, res) => {
     try {
       const body = generateBodySchema.parse(req.body);
+      const key = process.env.API_KEY_STATIC_ADS_LAB?.trim();
+      if (!key) throw new Error('API_KEY_STATIC_ADS_LAB is not set on the server.');
+      await validateBenefitWorkspace(key, body.workspace);
+      const pv = body.workspace.productVariantId?.trim() ?? '';
       const rows = await enqueueAdsForSelectedBenefits(
+        {
+          brandId: body.workspace.brandId,
+          productId: body.workspace.productId,
+          audienceId: body.workspace.audienceId,
+          ...(pv.length > 0 ? { productVariantId: pv } : {}),
+        },
         body.selectedBenefits,
         body.templateIds,
         body.rows,

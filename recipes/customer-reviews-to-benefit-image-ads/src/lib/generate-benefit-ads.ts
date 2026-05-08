@@ -1,4 +1,3 @@
-import { RECIPE_IDS } from '../config/recipe-constants.js';
 import { recipeLog } from './debug-log.js';
 import {
   createImageAd,
@@ -9,6 +8,14 @@ import type { DiscoveredBenefit } from './benefit-discover-pass2.js';
 import type { Pass1Extraction } from './benefit-extraction-pass1.js';
 import type { ReviewRow } from './parse-reviews.js';
 import { pickQuoteForBenefit, type QuotePick } from './pick-quote.js';
+
+export type RecipeWorkspacePick = {
+  brandId: string;
+  productId: string;
+  audienceId: string;
+  /** Omit or empty means do not send `product_variant_id`. */
+  productVariantId?: string;
+};
 
 export type QueuedBenefitAdRow = {
   imageAdId: string;
@@ -69,6 +76,7 @@ async function mapWithLimit<T, R>(
  */
 export async function enqueueBenefitImageAds(
   apiKey: string,
+  workspace: RecipeWorkspacePick,
   selectedBenefits: DiscoveredBenefit[],
   templateIds: string[],
   rows: ReviewRow[],
@@ -79,13 +87,6 @@ export async function enqueueBenefitImageAds(
   }
   if (templateIds.length === 0) {
     throw new Error('Select at least one design template.');
-  }
-
-  const pool = new Set(RECIPE_IDS.designTemplateIds);
-  for (const id of templateIds) {
-    if (!pool.has(id)) {
-      throw new Error(`Template id not allowed for this recipe: ${id}`);
-    }
   }
 
   const byEx = new Map<number, Pass1Extraction>();
@@ -100,6 +101,7 @@ export async function enqueueBenefitImageAds(
   };
 
   const specs: Spec[] = [];
+  const pv = workspace.productVariantId?.trim() ?? '';
 
   for (const benefit of selectedBenefits) {
     const highlight = pickQuoteForBenefit(benefit, rows, byEx);
@@ -107,13 +109,13 @@ export async function enqueueBenefitImageAds(
     for (const designTemplateId of templateIds) {
       const payload: CreateImageAdPayload = {
         design_template_id: designTemplateId,
-        brand_id: RECIPE_IDS.brandId,
-        product_id: RECIPE_IDS.productId,
-        audience_id: RECIPE_IDS.audienceId,
+        brand_id: workspace.brandId,
+        product_id: workspace.productId,
+        audience_id: workspace.audienceId,
         prompt,
       };
-      if (RECIPE_IDS.productVariantId?.trim()) {
-        payload.product_variant_id = RECIPE_IDS.productVariantId;
+      if (pv.length > 0) {
+        payload.product_variant_id = pv;
       }
       specs.push({ benefit, designTemplateId, payload });
     }

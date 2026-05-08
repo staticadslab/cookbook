@@ -3,9 +3,9 @@
  *
  * High-level algorithm (proof-of-concept):
  *
- * 1. LOAD CONFIG — API keys from `.env` (Gemini + Static Ads Lab). SAL ids in
- *    `src/config/recipe-constants.ts`. GET /api/config/env-status also reads brand, product, variant,
- *    and audience **names** from SAL (when the key and ids validate) for the workspace summary card.
+ * 1. LOAD CONFIG — API keys from `.env` (Gemini + Static Ads Lab). `recipe-constants.ts` only holds
+ *    Gemini tuning + max templates per run. Brand/product/audience/variant/design-template choices load from
+ *    SAL list APIs (`GET /api/workspace/catalog`, `GET /api/workspace/product/.../context`) and persist in the browser session.
  *
  * 2. INGEST — Parse reviews CSV (`rating`, `review` required; optional `customer_name`, `date`); keep 4–5★;
  *    assign stable `review_index` per row.
@@ -14,8 +14,8 @@
  *    per review (`signals` + `evidence_substrings`; server scrubs evidence not in text), then one discovery call
  *    for benefit `label`s and `source_review_indices` (counts for the chart).
  *
- * 4. UI — Bar chart + benefit picks + visual template cards. Thumbnail metadata for the card grid is loaded
- *    read-only from SAL via a small pool route (ids from `recipe-constants.ts`); see `src/http/server.ts`.
+ * 4. UI — Workspace summary (brand → product → audience; optional variant) + bar chart + benefit picks + template
+ *    checkboxes sourced from SAL completed templates (thumbnails prefer `reference_image_url`, else `preview_url`).
  *
  * 5. GENERATE — For each selected benefit × template: flat image ad whose `prompt` carries the benefit theme
  *    plus the strongest source review (full text + voice snippet). No `node_overrides` — SAL pipeline writes
