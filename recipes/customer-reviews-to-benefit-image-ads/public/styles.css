@@ -1,0 +1,634 @@
+/**
+ * Recipe UI — vanilla JS. Keys only hit this origin; no API secrets in the browser.
+ */
+
+:root {
+  font-family: system-ui, sans-serif;
+  line-height: 1.45;
+  color: #111;
+  background: #f6f6f4;
+}
+
+body {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+h1 {
+  font-size: 1.35rem;
+}
+
+section {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+textarea {
+  width: 100%;
+  min-height: 140px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+button {
+  cursor: pointer;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #111;
+  color: #fff;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: #fff;
+  color: #111;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.muted {
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.error {
+  color: #a40000;
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.grid img {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+}
+
+.ad-caption {
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
+
+.env-banner {
+  background: #fff3cd;
+  border: 1px solid #856404;
+  color: #533f03;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.env-banner__title {
+  display: block;
+  margin: 0 0 0.35rem;
+  font-size: 1.05em;
+}
+
+.env-banner__title ~ .env-banner__title {
+  margin-top: 1.1rem;
+}
+
+.env-banner ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.env-banner__tips {
+  margin: 0.25rem 0 0;
+}
+
+.env-banner__tips li {
+  margin-bottom: 0.2rem;
+}
+
+.env-banner--ok {
+  background: #e8f5e9;
+  border-color: #2e7d32;
+  color: #1b5e20;
+}
+
+.env-banner--pending {
+  background: #f5f5f5;
+  border-color: #999;
+  color: #333;
+}
+
+.env-banner--error {
+  background: #ffebee;
+  border-color: #c62828;
+  color: #b71c1c;
+}
+
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.section-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.jobs-wrap {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.jobs-table th,
+.jobs-table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid #e8e8e8;
+  vertical-align: top;
+}
+
+.jobs-table th {
+  font-weight: 600;
+  color: #444;
+  background: #f3f3f3;
+}
+
+.jobs-table tr:last-child td {
+  border-bottom: none;
+}
+
+.job-id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.job-sub {
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: 0.2rem;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot--pending {
+  background: #9e9e9e;
+}
+
+.status-dot--processing {
+  background: #f57c00;
+}
+
+.status-dot--completed {
+  background: #2e7d32;
+}
+
+.status-dot--failed {
+  background: #c62828;
+}
+
+.status-meta {
+  font-size: 0.8rem;
+  color: #666;
+  font-weight: 400;
+  margin-top: 0.25rem;
+}
+
+.created-main {
+  font-weight: 500;
+}
+
+.created-abs {
+  font-size: 0.78rem;
+  color: #888;
+  margin-top: 0.2rem;
+}
+
+/* Benefit chart + selection */
+
+.chart-hero {
+  margin-bottom: 1rem;
+}
+
+.chart-hero h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3rem 1fr;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.88rem;
+}
+
+.bar-row__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-row__count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #555;
+}
+
+.bar-row__track {
+  height: 10px;
+  background: #eee;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.bar-row__fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1565c0, #42a5f5);
+  border-radius: 6px;
+  min-width: 2px;
+}
+
+.benefit-card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.benefit-card label {
+  font-weight: 500;
+  margin: 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.benefit-card__pick {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+details.benefit-card__sources {
+  margin: 0.55rem 0 0;
+  font-size: 0.88rem;
+}
+
+.benefit-card__sources > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #455a64;
+  list-style: none;
+}
+
+.benefit-card__sources > summary::-webkit-details-marker {
+  display: none;
+}
+
+.benefit-card__sources-body {
+  margin-top: 0.35rem;
+}
+
+.benefit-card__source-list {
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.benefit-card__source-li blockquote {
+  margin: 0.2rem 0 0.6rem;
+  padding: 0.3rem 0 0 0.6rem;
+  border-left: 3px solid #cfd8dc;
+  font-size: 0.84rem;
+  color: #333;
+}
+
+.benefit-card__source-idx {
+  font-size: 0.72rem;
+  color: #78909c;
+  font-weight: 600;
+}
+
+.benefit-card__source-toggle {
+  margin-top: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.benefit-card__sources-empty {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+}
+
+.benefit-card .hint {
+  font-size: 0.8rem;
+  color: #666;
+  margin: 0.25rem 0 0 1.5rem;
+}
+
+.template-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.template-grid.template-grid--visual {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.template-grid__note,
+.template-grid__loading {
+  grid-column: 1 / -1;
+  margin: 0 0 0.25rem;
+}
+
+.template-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #dadada;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  min-height: 0;
+}
+
+.template-card--checked {
+  border-color: #1565c0;
+  box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.35);
+}
+
+.template-card__check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 1.1rem;
+  height: 1.1rem;
+  z-index: 2;
+  cursor: pointer;
+  accent-color: #1565c0;
+}
+
+.template-card__media {
+  aspect-ratio: 1 / 1;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.template-card__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.template-card__placeholder {
+  padding: 1rem 0.5rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: #666;
+  line-height: 1.3;
+}
+
+.template-card__foot {
+  padding: 0.45rem 0.5rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.template-card__id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  word-break: break-all;
+  color: #333;
+}
+
+.template-card__badge {
+  font-size: 0.72rem;
+  color: #546e7a;
+}
+
+.template-card__thumb-toggle {
+  margin-top: 0.35rem;
+  padding: 0.28rem 0.45rem;
+  font-size: 0.72rem;
+  width: 100%;
+}
+
+.status-live {
+  color: #1565c0;
+  font-weight: 500;
+}
+
+.step-status {
+  margin-top: 0.5rem;
+  min-height: 1.35em;
+}
+
+/* Workspace summary card (brand / product / variant / audience) */
+
+.workspace-summary {
+  border: 1px solid #c5cae9;
+  background: linear-gradient(180deg, #f8f9ff 0%, #fff 48%);
+  box-shadow: 0 1px 3px rgba(21, 101, 192, 0.06);
+}
+
+.workspace-summary__heading {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1a237e;
+}
+
+.workspace-summary__body {
+  margin: 0;
+}
+
+.workspace-summary__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+  color: #424242;
+}
+
+.workspace-summary__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 120px;
+}
+
+.workspace-summary__meta-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5c6bc0;
+}
+
+.workspace-summary__meta-value {
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.workspace-summary__id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: #616161;
+  word-break: break-all;
+}
+
+.workspace-summary__placeholder {
+  color: #9e9e9e;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.workspace-summary__hero {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 540px) {
+  .workspace-summary__hero {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.workspace-summary__tile {
+  border-radius: 10px;
+  padding: 1rem 1rem 0.85rem;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  position: relative;
+  overflow: hidden;
+}
+
+.workspace-summary__tile::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  border-radius: 10px 0 0 10px;
+}
+
+.workspace-summary__tile--product::before {
+  background: linear-gradient(180deg, #1565c0, #42a5f5);
+}
+
+.workspace-summary__tile--variant::before {
+  background: linear-gradient(180deg, #6a1b9a, #ba68c8);
+}
+
+.workspace-summary__tile-eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #546e7a;
+}
+
+.workspace-summary__tile--product .workspace-summary__tile-eyebrow {
+  color: #1565c0;
+}
+
+.workspace-summary__tile--variant .workspace-summary__tile-eyebrow {
+  color: #6a1b9a;
+}
+
+.workspace-summary__tile-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #111;
+}
+
+.workspace-summary__tile--variant .workspace-summary__tile-title {
+  font-size: 1.2rem;
+}
+
+.workspace-summary__tile .workspace-summary__id {
+  margin: 0;
+}
+
+.workspace-summary__warnings {
+  margin: 0.85rem 0 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+}
+
+.workspace-summary__warnings li {
+  margin-bottom: 0.25rem;
+}
+
