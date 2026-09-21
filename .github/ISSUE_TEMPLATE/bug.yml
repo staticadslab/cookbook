@@ -1,0 +1,36 @@
+name: Bug
+description: Something is broken.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs / screenshots / links
+      description: Paste logs or link a Drive file.
+  - type: input
+    id: wiki
+    attributes:
+      label: Related LLMWiki page
+      placeholder: wiki/products/staticadslabapp.md

@@ -1,0 +1,44 @@
+name: Task
+description: A scoped unit of work an agent or human can execute.
+title: "[task] "
+labels: ["agent"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this matters. Link LLMWiki pages and any relevant docs.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Concrete, checkable outcomes.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: input
+    id: wiki
+    attributes:
+      label: LLMWiki page(s)
+      description: Pages to read before starting, and to update after.
+      placeholder: wiki/products/staticadslabapp.md
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - frontend
+        - backend/api
+        - infra/deploy
+        - data
+        - docs
+        - other
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / constraints
+      description: Anything the agent must not do, or must preserve.
