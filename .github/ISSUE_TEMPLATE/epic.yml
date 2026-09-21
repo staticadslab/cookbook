@@ -1,0 +1,29 @@
+name: Epic
+description: A body of work spanning multiple tasks.
+title: "[epic] "
+labels: ["epic"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: The outcome this epic delivers.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is in and out of scope.
+    validations:
+      required: true
+  - type: textarea
+    id: children
+    attributes:
+      label: Child tasks
+      description: Link issues as they are created.
+  - type: input
+    id: wiki
+    attributes:
+      label: LLMWiki page(s)
+      placeholder: wiki/products/staticadslabapp.md
